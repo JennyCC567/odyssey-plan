@@ -3,6 +3,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createBaziProfile, type BaziCalculatorResult } from "../../lib/bazi";
+import { isSupportedCity } from "../../lib/cities";
 
 const requestSchema = z.object({
   year: z.coerce.number().int().min(1900).max(2100),
@@ -11,7 +12,9 @@ const requestSchema = z.object({
   hour: z.coerce.number().int().min(0).max(23),
   minute: z.coerce.number().int().min(0).max(59),
   gender: z.enum(["男", "女"]),
-  city: z.string().min(1).max(20)
+  city: z.string().min(1).max(20).refine((city) => isSupportedCity(city), {
+    message: "请选择城市列表中的城市。"
+  })
 });
 
 function runBaziCalculator(input: z.infer<typeof requestSchema>) {
@@ -68,9 +71,11 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(body);
 
   if (!parsed.success) {
+    const cityIssue = parsed.error.issues.find((issue) => issue.path[0] === "city");
+
     return NextResponse.json(
       {
-        message: "出生信息格式不完整，请检查年月日、时间、性别和城市。"
+        message: cityIssue?.message ?? "出生信息格式不完整，请检查年月日、时间、性别和城市。"
       },
       { status: 400 }
     );

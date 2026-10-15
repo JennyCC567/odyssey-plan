@@ -467,6 +467,45 @@ button:disabled {
   box-shadow: 0 0 0 4px rgba(200, 166, 74, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+.field-hint {
+  margin: 0;
+  color: var(--muted-light);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.field-hint.is-error {
+  color: #8b5a24;
+}
+
+.city-combobox {
+  display: grid;
+  gap: 10px;
+}
+
+.city-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.city-option {
+  min-height: 32px;
+  border: 1px solid rgba(36, 33, 29, 0.1);
+  border-radius: 999px;
+  padding: 6px 11px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+}
+
+.city-option:hover,
+.city-option.is-selected {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
 .span-2 {
   grid-column: span 2;
 }

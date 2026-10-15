@@ -16,6 +16,7 @@ import {
   Waypoints
 } from "lucide-react";
 import { createBaziReflection, type BaziProfile } from "./lib/bazi";
+import { isSupportedCity, searchCities, supportedCities } from "./lib/cities";
 import { analyzeDiagnosis, generateOdysseyPlans, scoreRedDots, type ExplorationAnswer, type OdysseyPlan } from "./lib/odyssey";
 import { evidenceTagById, elementMeta, redDotById, redDotQuestions, redDots, type EvidenceTagId, type RedDotId } from "./lib/theory";
 
@@ -67,6 +68,7 @@ const steps = [
 ];
 
 const MAX_FOLLOW_UP_QUESTIONS = 2;
+const CITY_DATALIST_ID = "birth-city-options";
 
 function PillarView({ label, value }: { label: string; value: string }) {
   return (
@@ -169,6 +171,9 @@ function BirthPanel({
   loading: boolean;
   error: string;
 }) {
+  const cityMatches = useMemo(() => searchCities(birthForm.city, 8), [birthForm.city]);
+  const cityIsValid = isSupportedCity(birthForm.city);
+
   return (
     <div className="content">
       <div className="ritual-copy">
@@ -209,7 +214,32 @@ function BirthPanel({
         </div>
         <div className="field span-2">
           <label>出生城市</label>
-          <input value={birthForm.city} onChange={(event) => setBirthForm({ ...birthForm, city: event.target.value })} />
+          <div className="city-combobox">
+            <input
+              value={birthForm.city}
+              onChange={(event) => setBirthForm({ ...birthForm, city: event.target.value })}
+              list={CITY_DATALIST_ID}
+              placeholder="搜索并选择城市"
+            />
+            <datalist id={CITY_DATALIST_ID}>
+              {supportedCities.map((city) => (
+                <option key={city} value={city} />
+              ))}
+            </datalist>
+            <div className="city-suggestions" aria-label="城市候选">
+              {cityMatches.map((city) => (
+                <button
+                  className={birthForm.city === city ? "city-option is-selected" : "city-option"}
+                  key={city}
+                  onClick={() => setBirthForm({ ...birthForm, city })}
+                  type="button"
+                >
+                  {city}
+                </button>
+              ))}
+            </div>
+          </div>
+          {birthForm.city.trim() && !cityIsValid ? <p className="field-hint is-error">请选择列表中的城市，省份暂不支持真太阳时校正。</p> : null}
         </div>
       </div>
 
@@ -223,7 +253,7 @@ function BirthPanel({
       {error ? <div className="notice">{error}</div> : null}
 
       <div className="button-row">
-        <button className="primary-button" onClick={onSubmit} disabled={loading}>
+        <button className="primary-button" onClick={onSubmit} disabled={loading || !cityIsValid}>
           {loading ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
           生成轻命理画像
         </button>
