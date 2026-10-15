@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { createBaziReflection, type BaziProfile } from "./lib/bazi";
 import { isSupportedCity, searchCities, supportedCities } from "./lib/cities";
-import { analyzeDiagnosis, generateOdysseyPlans, scoreRedDots, type ExplorationAnswer, type OdysseyPlan } from "./lib/odyssey";
-import { evidenceTagById, elementMeta, redDotById, redDotQuestions, redDots, type EvidenceTagId, type RedDotId } from "./lib/theory";
+import { analyzeDiagnosis, generateOdysseyPlans, inferEvidenceTagsFromText, scoreRedDots, type ExplorationAnswer, type OdysseyPlan } from "./lib/odyssey";
+import { elementMeta, redDotById, redDotQuestions, redDots, type RedDotId } from "./lib/theory";
 
 type BirthForm = {
   year: string;
@@ -339,7 +339,6 @@ function QuestionPanel({
   const question = redDotQuestions[currentIndex];
   const existing = answers.find((answer) => answer.questionId === question.id);
   const [draft, setDraft] = useState(existing?.text ?? "");
-  const [selectedTags, setSelectedTags] = useState<EvidenceTagId[]>(existing?.tags ?? []);
   const [confirmedRedDots, setConfirmedRedDots] = useState<RedDotId[]>(existing?.confirmedRedDots ?? []);
   const progress = answers.length;
   const showRedDotModel = question.id >= 10;
@@ -352,10 +351,6 @@ function QuestionPanel({
     return ranked.length >= 3 ? ranked : redDots.slice(0, 5);
   }, [answers]);
 
-  function toggleTag(tag: EvidenceTagId) {
-    setSelectedTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag]));
-  }
-
   function toggleRedDot(redDotId: RedDotId) {
     setConfirmedRedDots((items) => (items.includes(redDotId) ? items.filter((item) => item !== redDotId) : [...items, redDotId]));
   }
@@ -364,7 +359,7 @@ function QuestionPanel({
     const nextAnswer: ExplorationAnswer = {
       questionId: question.id,
       text: draft,
-      tags: selectedTags,
+      tags: inferEvidenceTagsFromText(draft, question.evidenceTags),
       confirmedRedDots: showRedDotModel ? confirmedRedDots : undefined
     };
     const nextAnswers = [...answers.filter((answer) => answer.questionId !== question.id), nextAnswer].sort(
@@ -386,7 +381,6 @@ function QuestionPanel({
     const nextExisting = nextAnswers.find((answer) => answer.questionId === redDotQuestions[nextIndex].id);
     setCurrentIndex(nextIndex);
     setDraft(nextExisting?.text ?? "");
-    setSelectedTags(nextExisting?.tags ?? []);
     setConfirmedRedDots(nextExisting?.confirmedRedDots ?? []);
   }
 
@@ -395,7 +389,6 @@ function QuestionPanel({
     const nextExisting = answers.find((answer) => answer.questionId === redDotQuestions[nextIndex].id);
     setCurrentIndex(nextIndex);
     setDraft(nextExisting?.text ?? "");
-    setSelectedTags(nextExisting?.tags ?? []);
     setConfirmedRedDots(nextExisting?.confirmedRedDots ?? []);
   }
 
@@ -430,24 +423,6 @@ function QuestionPanel({
               />
             </div>
 
-            <p className="choice-caption">{showRedDotModel ? "先标记这段回答里出现的证据线索，再对照红九模型确认假设。" : "这一步只标记生活证据，不提前给你贴红点类型标签。"}</p>
-
-            <div className="choice-grid">
-              {question.evidenceTags
-                .map((tagId) => evidenceTagById[tagId])
-                .map((tag) => (
-                  <button
-                    className={selectedTags.includes(tag.id) ? "choice-chip is-selected" : "choice-chip"}
-                    key={tag.id}
-                    onClick={() => toggleTag(tag.id)}
-                    type="button"
-                    title={tag.description}
-                  >
-                    {tag.label}
-                  </button>
-                ))}
-            </div>
-
             {showRedDotModel ? (
               <div className="model-explainer">
                 <h4>红九模型对照</h4>
@@ -473,7 +448,7 @@ function QuestionPanel({
                 <ArrowLeft size={18} />
                 上一问
               </button>
-              <button className="primary-button" onClick={saveAnswer} disabled={!draft.trim() || selectedTags.length === 0 || (showRedDotModel && confirmedRedDots.length === 0)}>
+              <button className="primary-button" onClick={saveAnswer} disabled={!draft.trim() || (showRedDotModel && confirmedRedDots.length === 0)}>
                 {question.id === 12 ? "生成诊断草案" : "保存并继续"}
                 <ArrowRight size={18} />
               </button>
@@ -534,7 +509,6 @@ function ResultPanel({
   const [showAllDots, setShowAllDots] = useState(false);
   const [consensusDots, setConsensusDots] = useState<RedDotId[]>(positiveScores.slice(0, 3).map((score) => score.id));
   const [followUpDraft, setFollowUpDraft] = useState("");
-  const [followUpTags, setFollowUpTags] = useState<EvidenceTagId[]>([]);
   const [followUpConfirmedDots, setFollowUpConfirmedDots] = useState<RedDotId[]>([]);
   const selectableDots = showAllDots ? redDots : recommendedDots;
 
@@ -544,7 +518,6 @@ function ResultPanel({
 
   useEffect(() => {
     setFollowUpDraft("");
-    setFollowUpTags([]);
     setFollowUpConfirmedDots([]);
   }, [activeFollowUp?.id]);
 
@@ -554,10 +527,6 @@ function ResultPanel({
       if (items.length >= 3) return [...items.slice(1), redDotId];
       return [...items, redDotId];
     });
-  }
-
-  function toggleFollowUpTag(tag: EvidenceTagId) {
-    setFollowUpTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag]));
   }
 
   function toggleFollowUpRedDot(redDotId: RedDotId) {
@@ -573,7 +542,7 @@ function ResultPanel({
       {
         questionId,
         text: followUpDraft,
-        tags: followUpTags,
+        tags: inferEvidenceTagsFromText(followUpDraft, activeFollowUp.evidenceTags),
         confirmedRedDots: followUpConfirmedDots
       }
     ].sort((a, b) => a.questionId - b.questionId);
@@ -639,25 +608,6 @@ function ResultPanel({
                     />
                   </div>
 
-                  <p className="choice-caption">这条补充证据主要支持哪个线索？</p>
-                  <div className="choice-grid">
-                    {activeFollowUp.evidenceTags.map((tagId) => {
-                      const tag = evidenceTagById[tagId];
-
-                      return (
-                        <button
-                          className={followUpTags.includes(tag.id) ? "choice-chip is-selected" : "choice-chip"}
-                          key={tag.id}
-                          onClick={() => toggleFollowUpTag(tag.id)}
-                          type="button"
-                          title={tag.description}
-                        >
-                          {tag.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
                   <p className="choice-caption">如果必须判断，这个例子更支持哪一个候选？</p>
                   <div className="choice-grid">
                     {activeFollowUp.candidates.map((candidate) => {
@@ -681,7 +631,7 @@ function ResultPanel({
                     <button
                       className="primary-button"
                       onClick={saveFollowUpAnswer}
-                      disabled={!followUpDraft.trim() || followUpTags.length === 0 || followUpConfirmedDots.length === 0}
+                      disabled={!followUpDraft.trim() || followUpConfirmedDots.length === 0}
                     >
                       保存补问并重新诊断
                       <ArrowRight size={18} />

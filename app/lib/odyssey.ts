@@ -57,6 +57,39 @@ const keywordWeights = redDots.flatMap((dot) =>
   }))
 );
 
+const evidenceTagKeywords: Record<EvidenceTagId, string[]> = {
+  stability: ["稳定", "安全", "安稳", "家庭", "亲密", "陪伴", "健康", "平衡", "生活", "关系", "秩序", "照顾", "长期"],
+  novelty: ["自由", "探索", "旅行", "新鲜", "变化", "挑战", "冒险", "未知", "体验", "尝试", "好奇", "远方"],
+  good_people: ["团队", "伙伴", "同事", "氛围", "环境", "协作", "共事", "文化", "同行", "关系", "一起"],
+  understanding: ["理解", "学习", "研究", "知识", "洞察", "逻辑", "本质", "思考", "看懂", "明白", "认知"],
+  craft: ["专业", "技能", "高手", "精进", "练习", "质量", "标准", "专注", "打磨", "匠", "能力"],
+  practical_return: ["钱", "收入", "回报", "商业", "财务", "自由", "资产", "变现", "利润", "资源", "现实"],
+  recognition: ["认可", "声望", "影响力", "曝光", "粉丝", "舞台", "表达", "看见", "出名", "评价", "证明"],
+  making: ["作品", "产品", "创造", "内容", "项目", "留下", "做成", "产出", "构建", "表达", "沉淀"],
+  helping: ["帮助", "改变", "价值", "教育", "公益", "社会", "赋能", "解决问题", "利他", "贡献", "影响他人"]
+};
+
+export function inferEvidenceTagsFromText(text: string, allowedTags?: EvidenceTagId[], limit = 3): EvidenceTagId[] {
+  const normalized = text.trim();
+  if (!normalized) return [];
+
+  const candidates = allowedTags?.length ? allowedTags : evidenceTags.map((tag) => tag.id);
+  const scored = candidates
+    .map((tagId) => {
+      const keywords = evidenceTagKeywords[tagId] ?? [];
+      const evidenceTag = evidenceTagById[tagId];
+      const score = keywords.reduce((sum, keyword) => sum + (normalized.includes(keyword) ? 1 : 0), 0) +
+        (evidenceTag && normalized.includes(evidenceTag.label.slice(0, 2)) ? 0.5 : 0);
+
+      return { tagId, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.tagId);
+
+  return unique(scored).slice(0, limit);
+}
+
 export function scoreRedDots(answers: ExplorationAnswer[]): RedDotScore[] {
   const scoreMap = new Map<RedDotId, RedDotScore>();
 
