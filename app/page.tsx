@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,9 +15,17 @@ import {
   Target,
   Waypoints
 } from "lucide-react";
-import { createBaziReflection, type BaziProfile } from "./lib/bazi";
+import type { BaziProfile } from "./lib/bazi";
 import { isSupportedCity, searchCities, supportedCities } from "./lib/cities";
-import { analyzeDiagnosis, generateOdysseyPlans, inferEvidenceTagsFromText, scoreRedDots, type ExplorationAnswer, type OdysseyPlan } from "./lib/odyssey";
+import {
+  analyzeDiagnosis,
+  inferEvidenceTagsFromText,
+  scoreRedDots,
+  type DiagnosisAnalysis,
+  type ExplorationAnswer,
+  type OdysseyPlan,
+  type RedDotScore
+} from "./lib/odyssey";
 import { elementMeta, redDotById, redDotQuestions, redDots, type RedDotId } from "./lib/theory";
 
 type BirthForm = {
@@ -32,6 +40,45 @@ type BirthForm = {
 
 type BaziResponse = {
   profile: BaziProfile;
+};
+
+type SessionResponse = {
+  session: {
+    id: string;
+  };
+};
+
+type AnswerResponse = {
+  sessionId: string;
+  answer: ExplorationAnswer;
+  answers: ExplorationAnswer[];
+};
+
+type ReflectionResponse = {
+  reflection: string;
+  source: string;
+};
+
+type MirrorEntry = {
+  id: string;
+  questionId: number;
+  theme: string;
+  text: string;
+  status: "loading" | "done" | "fallback";
+};
+
+type DiagnosisDraftResponse = {
+  draftId?: string;
+  scores: RedDotScore[];
+  analysis: DiagnosisAnalysis;
+  topScores: RedDotScore[];
+  source: string;
+};
+
+type PlansResponse = {
+  planId?: string;
+  plans: OdysseyPlan[];
+  source: string;
 };
 
 const defaultBirthForm: BirthForm = {
@@ -325,6 +372,9 @@ function QuestionPanel({
   setCurrentIndex,
   reflections,
   setReflections,
+  sessionId,
+  setSessionId,
+  setError,
   onComplete
 }: {
   profile: BaziProfile;
@@ -332,8 +382,11 @@ function QuestionPanel({
   setAnswers: (answers: ExplorationAnswer[]) => void;
   currentIndex: number;
   setCurrentIndex: (index: number) => void;
-  reflections: string[];
-  setReflections: (items: string[]) => void;
+  reflections: MirrorEntry[];
+  setReflections: Dispatch<SetStateAction<MirrorEntry[]>>;
+  sessionId: string;
+  setSessionId: (value: string) => void;
+  setError: (value: string) => void;
   onComplete: () => void;
 }) {
   const question = redDotQuestions[currentIndex];
@@ -352,25 +405,123 @@ function QuestionPanel({
   }, [answers]);
 
   function toggleRedDot(redDotId: RedDotId) {
-    setConfirmedRedDots((items) => (items.includes(redDotId) ? items.filter((item) => item !== redDotId) : [...items, redDotId]));
+    setConfirmedRedDots((items) => {
+      if (items.includes(redDotId)) return items.filter((item) => item !== redDotId);
+      if (items.length >= 3) return [...items.slice(1), redDotId];
+      return [...items, redDotId];
+    });
   }
 
-  function saveAnswer() {
+  function getRank(redDotId: RedDotId) {
+    const index = confirmedRedDots.indexOf(redDotId);
+    return index >= 0 ? index + 1 : undefined;
+  }
+
+  async function saveAnswer() {
     const nextAnswer: ExplorationAnswer = {
       questionId: question.id,
       text: draft,
       tags: inferEvidenceTagsFromText(draft, question.evidenceTags),
       confirmedRedDots: showRedDotModel ? confirmedRedDots : undefined
     };
-    const nextAnswers = [...answers.filter((answer) => answer.questionId !== question.id), nextAnswer].sort(
-      (a, b) => a.questionId - b.questionId
-    );
-    setAnswers(nextAnswers);
+    let normalizedAnswer = nextAnswer;
+    const mirrorId = `q${question.id}-${Date.now()}`;
+    let nextAnswers = [...answers.filter((answer) => answer.questionId !== question.id), nextAnswer].sort((a, b) => a.questionId - b.questionId);
+    const shouldCreateMirror = question.id % 3 === 0;
 
-    if (question.id % 3 === 0) {
-      const reflection = createBaziReflection(profile, question.id, draft);
-      setReflections([...reflections, reflection]);
+    if (shouldCreateMirror) {
+      setReflections([
+        ...reflections.filter((item) => item.questionId !== question.id),
+        {
+          id: mirrorId,
+          questionId: question.id,
+          theme: `第 ${question.id - 2}-${question.id} 问回看`,
+          text: "命理镜像正在结合这一轮三题回答生成...",
+          status: "loading"
+        }
+      ]);
     }
+
+    try {
+      const response = await fetch("/api/exploration/answer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionId: sessionId || undefined,
+          profile,
+          answer: nextAnswer,
+          shouldReflect: false
+        })
+      });
+      const data = (await response.json()) as AnswerResponse & { message?: string };
+
+      if (!response.ok) {
+        throw new Error(data.message ?? "保存回答失败");
+      }
+
+      normalizedAnswer = data.answer;
+      nextAnswers = data.answers.length ? data.answers : nextAnswers;
+      if (data.sessionId && data.sessionId !== sessionId) setSessionId(data.sessionId);
+      setError("");
+
+      if (shouldCreateMirror) {
+        const mirrorAnswers = nextAnswers.filter((answer) => answer.questionId >= question.id - 2 && answer.questionId <= question.id);
+
+        fetch("/api/exploration/reflection", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            profile,
+            answeredCount: question.id,
+            latestAnswer: normalizedAnswer.text,
+            answers: mirrorAnswers,
+            question: {
+              id: question.id,
+              theme: question.theme,
+              prompt: question.prompt
+            }
+          })
+        })
+          .then(async (reflectionResponse) => {
+            const reflectionData = (await reflectionResponse.json()) as ReflectionResponse & { message?: string };
+            if (!reflectionResponse.ok) throw new Error(reflectionData.message ?? "命理镜像生成失败");
+            setReflections((items) => items.map((item) => item.id === mirrorId
+              ? {
+                  ...item,
+                  text: reflectionData.reflection,
+                  status: "done"
+                }
+              : item));
+          })
+          .catch(() => {
+            setReflections((items) => items.map((item) => item.id === mirrorId
+              ? {
+                  ...item,
+                  text: "这一轮三题已经保存。命理镜像暂时没有生成成功，但它只作为陪伴式复盘，不影响红点判断。",
+                  status: "fallback"
+                }
+              : item));
+          });
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "保存回答失败，已先保留在当前页面。 ");
+      nextAnswers = [...answers.filter((answer) => answer.questionId !== question.id), normalizedAnswer].sort((a, b) => a.questionId - b.questionId);
+      if (shouldCreateMirror) {
+        setReflections((items) => items.map((item) => item.id === mirrorId
+          ? {
+              ...item,
+              text: "这一轮三题已先保存在页面里。模型镜像暂时失败，可以继续回答，稍后再试。",
+              status: "fallback"
+            }
+          : item));
+      }
+    }
+
+    setAnswers(nextAnswers);
 
     if (question.id === redDotQuestions.length) {
       onComplete();
@@ -426,19 +577,33 @@ function QuestionPanel({
             {showRedDotModel ? (
               <div className="model-explainer">
                 <h4>红九模型对照</h4>
-                <p>现在才进入类型解释：这里不是让你凭名字认领，而是从前面积累的证据里筛出最多 5 个候选，再让你对照含义确认 Top 3。</p>
-                <div className="choice-grid">
+                <p>现在才进入类型解释：不是凭名字认领，而是从前面积累的证据里筛出候选。点击卡片会按选择顺序排成 Top 1 / Top 2 / Top 3；再次点击可移除。</p>
+                <div className="ranked-red-dot-grid">
                   {redDotCandidates.map((dot) => (
                     <button
-                      className={confirmedRedDots.includes(dot.id) ? "choice-chip is-selected" : "choice-chip"}
+                      className={confirmedRedDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
                       key={dot.id}
                       onClick={() => toggleRedDot(dot.id)}
                       type="button"
                       title={dot.trait}
                     >
-                      {dot.name}
+                      <span className="rank-mark">{getRank(dot.id) ? `Top ${getRank(dot.id)}` : "候选"}</span>
+                      <strong>{dot.name}</strong>
+                      <span>{dot.trait}</span>
+                      <em>{dot.motto}</em>
                     </button>
                   ))}
+                </div>
+                <div className="rank-summary">
+                  {[0, 1, 2].map((index) => {
+                    const selected = confirmedRedDots[index];
+                    return (
+                      <div className="rank-slot" key={index}>
+                        <span>Top {index + 1}</span>
+                        <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
@@ -463,14 +628,14 @@ function QuestionPanel({
           </div>
           <div className="panel-body">
             {reflections.length ? (
-              reflections.map((reflection, index) => (
-                <div className="mirror-card" key={reflection}>
-                  <strong>第 {index + 1} 次镜像</strong>
-                  <p>{reflection}</p>
+              reflections.map((reflection) => (
+                <div className={reflection.status === "loading" ? "mirror-card is-loading" : "mirror-card"} key={reflection.id}>
+                  <strong>Q{reflection.questionId} · {reflection.theme}</strong>
+                  <p>{reflection.text}</p>
                 </div>
               ))
             ) : (
-              <div className="empty-state">完成第 3、6、9、12 问后，这里会出现命理镜像回应。</div>
+              <div className="empty-state">完成第 3、6、9、12 问后，这里会结合命理 Skill 和这一轮回答生成镜像回应。</div>
             )}
           </div>
         </section>
@@ -484,18 +649,27 @@ function ResultPanel({
   setAnswers,
   onGeneratePlans,
   direction,
-  setDirection
+  setDirection,
+  sessionId,
+  diagnosisDraft,
+  setDiagnosisDraft,
+  setError
 }: {
   answers: ExplorationAnswer[];
   setAnswers: (answers: ExplorationAnswer[]) => void;
   onGeneratePlans: (topDots: RedDotId[]) => void;
   direction: string;
   setDirection: (value: string) => void;
+  sessionId: string;
+  diagnosisDraft: DiagnosisDraftResponse | null;
+  setDiagnosisDraft: (draft: DiagnosisDraftResponse | null) => void;
+  setError: (value: string) => void;
 }) {
-  const scores = useMemo(() => scoreRedDots(answers), [answers]);
-  const diagnosis = useMemo(() => analyzeDiagnosis(scores), [scores]);
+  const localScores = useMemo(() => scoreRedDots(answers), [answers]);
+  const scores = diagnosisDraft?.scores ?? localScores;
+  const diagnosis = diagnosisDraft?.analysis ?? analyzeDiagnosis(scores);
   const positiveScores = scores.filter((score) => score.score > 0);
-  const topScores = positiveScores.length >= 3 ? positiveScores.slice(0, 3) : scores.slice(0, 3);
+  const topScores = diagnosisDraft?.topScores ?? (positiveScores.length >= 3 ? positiveScores.slice(0, 3) : scores.slice(0, 3));
   const consensusSeedKey = positiveScores.slice(0, 3).map((score) => score.id).join("|");
   const followUpCount = answers.filter((answer) => answer.questionId >= 13).length;
   const canAskFollowUp = diagnosis.status === "needs_follow_up" && followUpCount < MAX_FOLLOW_UP_QUESTIONS;
@@ -511,6 +685,48 @@ function ResultPanel({
   const [followUpDraft, setFollowUpDraft] = useState("");
   const [followUpConfirmedDots, setFollowUpConfirmedDots] = useState<RedDotId[]>([]);
   const selectableDots = showAllDots ? redDots : recommendedDots;
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function fetchDiagnosisDraft() {
+      if (!answers.length) return;
+
+      try {
+        const response = await fetch("/api/diagnosis/draft", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            sessionId: sessionId || undefined,
+            answers
+          })
+        });
+        const data = (await response.json()) as DiagnosisDraftResponse & { message?: string };
+
+        if (!response.ok) {
+          throw new Error(data.message ?? "生成诊断草案失败");
+        }
+
+        if (!canceled) {
+          setDiagnosisDraft(data);
+          setError("");
+        }
+      } catch (requestError) {
+        if (!canceled) {
+          setDiagnosisDraft(null);
+          setError(requestError instanceof Error ? requestError.message : "生成诊断草案失败，已展示本地规则草案。");
+        }
+      }
+    }
+
+    fetchDiagnosisDraft();
+
+    return () => {
+      canceled = true;
+    };
+  }, [answers, sessionId, setDiagnosisDraft, setError]);
 
   useEffect(() => {
     setConsensusDots(consensusSeedKey ? (consensusSeedKey.split("|") as RedDotId[]) : []);
@@ -529,25 +745,61 @@ function ResultPanel({
     });
   }
 
+  function getConsensusRank(redDotId: RedDotId) {
+    const index = consensusDots.indexOf(redDotId);
+    return index >= 0 ? index + 1 : undefined;
+  }
+
   function toggleFollowUpRedDot(redDotId: RedDotId) {
     setFollowUpConfirmedDots((items) => (items.includes(redDotId) ? [] : [redDotId]));
   }
 
-  function saveFollowUpAnswer() {
+  async function saveFollowUpAnswer() {
     if (!activeFollowUp) return;
 
     const questionId = Math.max(13, ...answers.map((answer) => answer.questionId + 1));
-    const nextAnswers = [
+    const followUpAnswer: ExplorationAnswer = {
+      questionId,
+      text: followUpDraft,
+      tags: inferEvidenceTagsFromText(followUpDraft, activeFollowUp.evidenceTags),
+      confirmedRedDots: followUpConfirmedDots
+    };
+    const fallbackAnswers = [
       ...answers,
-      {
-        questionId,
-        text: followUpDraft,
-        tags: inferEvidenceTagsFromText(followUpDraft, activeFollowUp.evidenceTags),
-        confirmedRedDots: followUpConfirmedDots
-      }
+      followUpAnswer
     ].sort((a, b) => a.questionId - b.questionId);
 
-    setAnswers(nextAnswers);
+    try {
+      const response = await fetch("/api/diagnosis/follow-up", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sessionId: sessionId || undefined,
+          answers,
+          answer: followUpAnswer
+        })
+      });
+      const data = (await response.json()) as AnswerResponse & DiagnosisDraftResponse & { message?: string };
+
+      if (!response.ok) {
+        throw new Error(data.message ?? "保存补问失败");
+      }
+
+      setAnswers(data.answers.length ? data.answers : fallbackAnswers);
+      setDiagnosisDraft({
+        scores: data.scores,
+        analysis: data.analysis,
+        topScores: data.topScores,
+        source: data.source
+      });
+      setError("");
+    } catch (requestError) {
+      setAnswers(fallbackAnswers);
+      setDiagnosisDraft(null);
+      setError(requestError instanceof Error ? requestError.message : "保存补问失败，已先保留在当前页面。");
+    }
   }
 
   return (
@@ -675,18 +927,32 @@ function ResultPanel({
                     ? "系统已经补问两轮但证据仍未完全收敛。此时不再继续追问，请把推荐候选当作低置信草案，由你重新选择最终 Top 3；这个人工确认会作为后续奥德赛计划的前提。"
                     : "如果草案不符合你的真实感受，可以先从推荐候选里重新选择最终 Top 3。这里的选择会作为后续奥德赛计划的前提。"}
                 </p>
-                <div className="choice-grid">
+                <div className="ranked-red-dot-grid">
                   {selectableDots.map((dot) => (
                     <button
-                      className={consensusDots.includes(dot.id) ? "choice-chip is-selected" : "choice-chip"}
+                      className={consensusDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
                       key={dot.id}
                       onClick={() => toggleConsensusDot(dot.id)}
                       type="button"
                       title={dot.trait}
                     >
-                      {dot.name}
+                      <span className="rank-mark">{getConsensusRank(dot.id) ? `Top ${getConsensusRank(dot.id)}` : "候选"}</span>
+                      <strong>{dot.name}</strong>
+                      <span>{dot.trait}</span>
+                      <em>{dot.motto}</em>
                     </button>
                   ))}
+                </div>
+                <div className="rank-summary">
+                  {[0, 1, 2].map((index) => {
+                    const selected = consensusDots[index];
+                    return (
+                      <div className="rank-slot" key={index}>
+                        <span>Top {index + 1}</span>
+                        <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="button-row" style={{ marginTop: 12 }}>
                   <button className="ghost-button" type="button" onClick={() => setShowAllDots((value) => !value)}>
@@ -810,9 +1076,11 @@ export default function Home() {
   const [stage, setStage] = useState<"birth" | "intro" | "questions" | "result" | "plans">("birth");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [diagnosisDraft, setDiagnosisDraft] = useState<DiagnosisDraftResponse | null>(null);
   const [answers, setAnswers] = useState<ExplorationAnswer[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [reflections, setReflections] = useState<string[]>([]);
+  const [reflections, setReflections] = useState<MirrorEntry[]>([]);
   const [direction, setDirection] = useState("");
   const [plans, setPlans] = useState<OdysseyPlan[]>([]);
 
@@ -837,6 +1105,23 @@ export default function Home() {
       }
 
       setProfile(data.profile);
+
+      const sessionResponse = await fetch("/api/session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          birthForm,
+          baziProfile: data.profile
+        })
+      });
+      const sessionData = (await sessionResponse.json()) as SessionResponse & { message?: string };
+
+      if (sessionResponse.ok) {
+        setSessionId(sessionData.session.id);
+      }
+
       setStage("intro");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "排盘失败");
@@ -851,13 +1136,15 @@ export default function Home() {
     setAnswers([]);
     setCurrentIndex(0);
     setReflections([]);
+    setSessionId("");
+    setDiagnosisDraft(null);
     setDirection("");
     setPlans([]);
     setError("");
   }
 
   function exportJson() {
-    const payload = JSON.stringify({ birthForm, profile, answers, reflections, direction, plans }, null, 2);
+    const payload = JSON.stringify({ sessionId, birthForm, profile, answers, reflections, direction, plans }, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -890,6 +1177,8 @@ export default function Home() {
             </div>
           </header>
 
+          {error && stage !== "birth" ? <div className="global-error notice">{error}</div> : null}
+
           {stage === "birth" ? (
             <BirthPanel birthForm={birthForm} setBirthForm={setBirthForm} onSubmit={submitBirthInfo} loading={loading} error={error} />
           ) : null}
@@ -905,6 +1194,9 @@ export default function Home() {
               setCurrentIndex={setCurrentIndex}
               reflections={reflections}
               setReflections={setReflections}
+              sessionId={sessionId}
+              setSessionId={setSessionId}
+              setError={setError}
               onComplete={() => setStage("result")}
             />
           ) : null}
@@ -915,9 +1207,50 @@ export default function Home() {
               setAnswers={setAnswers}
               direction={direction}
               setDirection={setDirection}
-              onGeneratePlans={(topDots) => {
-                setPlans(generateOdysseyPlans(topDots, direction));
-                setStage("plans");
+              sessionId={sessionId}
+              diagnosisDraft={diagnosisDraft}
+              setDiagnosisDraft={setDiagnosisDraft}
+              setError={setError}
+              onGeneratePlans={async (topDots) => {
+                setLoading(true);
+                setError("");
+
+                try {
+                  await fetch("/api/diagnosis/confirm", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      sessionId: sessionId || undefined,
+                      finalRedDots: topDots
+                    })
+                  });
+
+                  const response = await fetch("/api/odyssey/plans", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      sessionId: sessionId || undefined,
+                      topDots,
+                      direction
+                    })
+                  });
+                  const data = (await response.json()) as PlansResponse & { message?: string };
+
+                  if (!response.ok) {
+                    throw new Error(data.message ?? "生成奥德赛计划失败");
+                  }
+
+                  setPlans(data.plans);
+                  setStage("plans");
+                } catch (requestError) {
+                  setError(requestError instanceof Error ? requestError.message : "生成奥德赛计划失败");
+                } finally {
+                  setLoading(false);
+                }
               }}
             />
           ) : null}
