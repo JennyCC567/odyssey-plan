@@ -93,6 +93,75 @@ button:disabled {
   gap: 22px;
   width: min(1380px, 100%);
   margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- 水墨动态背景（半分辨率 canvas + 宣纸颗粒） ---- */
+
+.ink-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.paper-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+}
+
+/* 墨晕呼吸：左上淡墨、右下金晕两团柔光缓慢明暗，点缀全页留白 */
+.ink-blot {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.ink-blot::before,
+.ink-blot::after {
+  position: absolute;
+  content: "";
+  border-radius: 50%;
+}
+
+.ink-blot::before {
+  left: 6%;
+  top: 12%;
+  width: 46vw;
+  height: 36vh;
+  background: radial-gradient(closest-side, rgba(36, 33, 29, 0.055), transparent);
+  animation: blot-breathe 11s ease-in-out infinite alternate;
+}
+
+.ink-blot::after {
+  right: 8%;
+  bottom: 10%;
+  width: 40vw;
+  height: 34vh;
+  background: radial-gradient(closest-side, rgba(200, 166, 74, 0.06), transparent);
+  animation: blot-breathe 14s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes blot-breathe {
+  from {
+    transform: scale(0.94);
+    opacity: 0.55;
+  }
+
+  to {
+    transform: scale(1.1);
+    opacity: 1;
+  }
 }
 
 .sidebar,
@@ -118,9 +187,48 @@ button:disabled {
   min-height: calc(100vh - 48px);
   border-radius: 8px 32px 32px 8px;
   overflow: hidden;
+  position: relative;
   background:
     linear-gradient(180deg, rgba(251, 250, 246, 0.92), rgba(248, 244, 236, 0.88)),
     radial-gradient(ellipse 90% 44% at 50% 22%, rgba(255, 255, 255, 0.72), transparent 68%);
+}
+
+/* 右上角观星图：细线连星与静态星点（呼应奥德修斯凭星辰导航），不旋转，与左侧罗盘母题区分 */
+.main-panel::before {
+  position: absolute;
+  right: 44px;
+  top: 18px;
+  width: 188px;
+  height: 188px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 188 188'%3E%3Cpolyline points='24,148 62,112 100,132 132,84 156,48' fill='none' stroke='rgba(36,33,29,0.13)' stroke-width='1'/%3E%3Ccircle cx='24' cy='148' r='2.2' fill='rgba(36,33,29,0.24)'/%3E%3Ccircle cx='62' cy='112' r='2.8' fill='rgba(36,33,29,0.24)'/%3E%3Ccircle cx='100' cy='132' r='2' fill='rgba(36,33,29,0.24)'/%3E%3Ccircle cx='132' cy='84' r='2.4' fill='rgba(36,33,29,0.24)'/%3E%3Ccircle cx='44' cy='62' r='1.6' fill='rgba(36,33,29,0.18)'/%3E%3Ccircle cx='150' cy='150' r='1.6' fill='rgba(36,33,29,0.18)'/%3E%3C/svg%3E") no-repeat center / contain;
+  content: "";
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 观星图顶端的金星：缓慢明暗呼吸，为静态星图添一点生气 */
+.main-panel::after {
+  position: absolute;
+  right: 70px;
+  top: 60px;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle, rgba(200, 166, 74, 0.85) 0 2px, rgba(200, 166, 74, 0.28) 3px, transparent 6px);
+  content: "";
+  pointer-events: none;
+  z-index: 0;
+  animation: star-twinkle 3.6s ease-in-out infinite;
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 .brand {
@@ -131,6 +239,7 @@ button:disabled {
   overflow: hidden;
 }
 
+/* 罗盘纹理：圆环 + 十字指针 + 环上一粒金星，90 秒缓转一圈，呼应「人生罗盘」 */
 .brand::before {
   position: absolute;
   width: 330px;
@@ -140,21 +249,81 @@ button:disabled {
   border: 1px solid rgba(36, 33, 29, 0.09);
   border-radius: 50%;
   background:
+    radial-gradient(circle at 50% 8%, rgba(200, 166, 74, 0.55) 0 2.5px, transparent 3px),
     radial-gradient(circle at 50% 50%, transparent 0 36%, rgba(36, 33, 29, 0.04) 36% 37%, transparent 37%),
-    linear-gradient(115deg, transparent 48%, rgba(36, 33, 29, 0.08) 49%, transparent 50%);
+    radial-gradient(circle at 50% 50%, transparent 0 58%, rgba(36, 33, 29, 0.05) 58% 59%, transparent 59%),
+    linear-gradient(115deg, transparent 48%, rgba(36, 33, 29, 0.08) 49%, transparent 50%),
+    linear-gradient(25deg, transparent 48.5%, rgba(36, 33, 29, 0.05) 49%, transparent 49.5%);
+  animation: compass-spin 90s linear infinite;
   content: "";
 }
 
-.brand::after {
+@keyframes compass-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 水墨小舟：船身随波轻摇、船帆微颤、双道波纹缓速流动（纯 transform 合成动画） */
+.brand-boat {
   position: absolute;
-  left: 28px;
-  bottom: 28px;
-  width: 92px;
-  height: 20px;
-  border-radius: 0 0 55px 55px;
-  background: rgba(36, 33, 29, 0.12);
-  transform: skewX(-18deg);
-  content: "";
+  left: 24px;
+  bottom: 10px;
+  overflow: visible;
+}
+
+.boat-body {
+  transform-origin: 70px 44px;
+  animation: boat-rock 5.6s ease-in-out infinite;
+}
+
+@keyframes boat-rock {
+  0%,
+  100% {
+    transform: rotate(-2deg) translateY(0.4px);
+  }
+
+  50% {
+    transform: rotate(2.2deg) translateY(-1px);
+  }
+}
+
+.boat-sail-main {
+  transform-origin: 70px 14px;
+  animation: sail-sway 4.2s ease-in-out infinite alternate;
+}
+
+.boat-sail-jib {
+  transform-origin: 69px 16px;
+  animation: sail-sway 3.6s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes sail-sway {
+  from {
+    transform: skewX(0deg) scaleX(1);
+  }
+
+  to {
+    transform: skewX(-3deg) scaleX(0.97);
+  }
+}
+
+.boat-wave {
+  animation: wave-march 9s linear infinite;
+}
+
+.boat-wave-b {
+  animation-duration: 13.5s;
+}
+
+@keyframes wave-march {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-48px);
+  }
 }
 
 .brand-row {
@@ -393,58 +562,45 @@ button:disabled {
   font-size: 12px;
 }
 
-.main-header {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 36px 42px 30px;
-  border-bottom: 1px solid var(--line-soft);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.08)),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.46), transparent 68%);
-  overflow: hidden;
-}
-
-.main-header::after {
+.download-fab {
   position: absolute;
-  right: 44px;
-  top: 18px;
-  width: 188px;
-  height: 188px;
-  border: 1px solid rgba(36, 33, 29, 0.07);
+  right: 30px;
+  bottom: 28px;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(216, 208, 195, 0.9);
   border-radius: 50%;
-  background: radial-gradient(circle, transparent 0 44%, rgba(36, 33, 29, 0.045) 44% 45%, transparent 45%);
-  content: "";
+  background: rgba(251, 250, 246, 0.9);
+  color: var(--ink-soft);
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(36, 33, 29, 0.14);
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  z-index: 40;
 }
 
-.main-header h2 {
-  position: relative;
-  margin: 0;
-  max-width: 760px;
-  font-family: var(--serif);
-  font-size: clamp(30px, 4.2vw, 56px);
-  font-weight: 400;
-  line-height: 1.22;
+.download-fab:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(36, 33, 29, 0.18);
+  color: var(--gold);
 }
 
-.main-header p {
-  position: relative;
-  max-width: 720px;
-  margin: 16px 0 0;
-  color: var(--muted);
-  line-height: 1.85;
-}
-
-.header-actions {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+.download-fab:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .content {
   padding: 34px 42px 44px;
+}
+
+/* 阶段内容整体抬到圆弧纹理之上，避免装饰线压在卡片上 */
+.main-panel > .content {
+  position: relative;
+  z-index: 1;
 }
 
 .ritual-copy {
@@ -1757,6 +1913,17 @@ button:disabled {
   .water-ripple {
     display: none;
   }
+
+  .brand::before,
+  .main-panel::after,
+  .ink-blot::before,
+  .ink-blot::after,
+  .boat-body,
+  .boat-sail-main,
+  .boat-sail-jib,
+  .boat-wave {
+    animation: none;
+  }
 }
 
 /* ---- 三版计划可视化 ---- */
@@ -2098,17 +2265,8 @@ button:disabled {
     gap: 12px;
   }
 
-  .main-header,
   .content {
     padding: 22px;
-  }
-
-  .main-header {
-    display: grid;
-  }
-
-  .main-header h2 {
-    font-size: 30px;
   }
 
   .brand {

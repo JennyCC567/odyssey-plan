@@ -147,6 +147,17 @@ function ProfileSidebar({ profile, activeStep }: { profile: BaziProfile | null; 
           </span>
         </div>
         <p>用命理制造好奇，用十二问保留主体性，用奥德赛计划把方向变成可试验的人生版本。</p>
+        {/* 水墨小舟：船身随波轻摇、船帆微颤、双道波纹缓慢流动（纯 transform 合成动画） */}
+        <svg className="brand-boat" viewBox="0 0 140 62" width="140" height="62" aria-hidden="true">
+          <g className="boat-body">
+            <path d="M52 42 L88 42 L79 50 L61 50 Z" fill="rgba(36, 33, 29, 0.5)" />
+            <path d="M70 12 L70 41" stroke="rgba(36, 33, 29, 0.45)" strokeWidth="1.4" strokeLinecap="round" />
+            <path className="boat-sail boat-sail-main" d="M70 14 C 84 20, 88 31, 85 41 L70 41 Z" fill="rgba(168, 130, 42, 0.4)" />
+            <path className="boat-sail boat-sail-jib" d="M69 16 C 60 22, 57 31, 59 41 L69 41 Z" fill="rgba(36, 33, 29, 0.22)" />
+          </g>
+          <path className="boat-wave boat-wave-a" d="M-2 47 Q 10 43, 22 47 T 46 47 T 70 47 T 94 47 T 118 47 T 142 47 T 166 47 T 190 47" fill="none" stroke="rgba(36, 33, 29, 0.16)" strokeWidth="1.2" strokeLinecap="round" />
+          <path className="boat-wave boat-wave-b" d="M-2 54 Q 10 50, 22 54 T 46 54 T 70 54 T 94 54 T 118 54 T 142 54 T 166 54 T 190 54" fill="none" stroke="rgba(36, 33, 29, 0.1)" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
       </div>
 
       <div className="steps">
@@ -201,7 +212,14 @@ function ProfileSidebar({ profile, activeStep }: { profile: BaziProfile | null; 
           <div className="side-section">
             <h2>命理启发线索</h2>
             <div className="hint-list">
-              {[profile.dayMaster.cue, ...profile.dominantElements.slice(0, 2).map((item) => item.cue)].map((cue) => (
+              {[
+                `日主·${profile.dayMaster.label}｜${profile.dayMaster.cue}`,
+                // 跳过与日主相同的五行，避免线索文案重复，顺延取下一名
+                ...profile.dominantElements
+                  .filter((item) => item.element !== profile.dayMaster.element)
+                  .slice(0, 2)
+                  .map((item) => `${item.label}气盛｜${item.cue}`)
+              ].map((cue) => (
                 <span className="tag" key={cue}>
                   {cue}
                 </span>
@@ -311,7 +329,7 @@ function BirthPanel({
       <div className="button-row">
         <button className="primary-button" onClick={onSubmit} disabled={loading || !cityIsValid}>
           {loading ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
-          生成命理画像
+          {loading ? "正在起盘，推演四柱…" : "生成命理画像"}
         </button>
       </div>
     </div>
@@ -1431,6 +1449,144 @@ function PlanBootScreen() {
   );
 }
 
+// 水墨动态背景：数团淡墨与金晕在宣纸底色上缓慢游移（象牙白哲思 + 中式水墨）。
+// 性能策略：半分辨率 canvas（墨晕本就晕染，拉伸反而更自然）+ 预渲染精灵位图搬运 + 30fps 节流
+// + 页面隐藏暂停 + prefers-reduced-motion 只画一帧静态纹理——不卡主线程，不触发重排。
+function InkBackground() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0;
+    let last = 0;
+    const FRAME_MS = 1000 / 30;
+    type Wisp = {
+      sprite: HTMLCanvasElement;
+      bx: number;
+      by: number;
+      r: number;
+      amp: number;
+      speed: number;
+      phase: number;
+      peak: number;
+    };
+    let wisps: Wisp[] = [];
+
+    // 预渲染：三层叠圆制造不规则墨形，运行时只做 drawImage
+    const makeSprite = (gold: boolean) => {
+      const sprite = document.createElement("canvas");
+      sprite.width = sprite.height = 256;
+      const g = sprite.getContext("2d");
+      if (!g) return sprite;
+      const blobs: Array<[number, number, number]> = [
+        [0.5, 0.5, 0.5],
+        [0.37, 0.44, 0.3],
+        [0.62, 0.6, 0.27]
+      ];
+      for (const [cx, cy, cr] of blobs) {
+        const grad = g.createRadialGradient(cx * 256, cy * 256, 0, cx * 256, cy * 256, cr * 256);
+        if (gold) {
+          grad.addColorStop(0, "rgba(200, 166, 74, 0.42)");
+          grad.addColorStop(1, "rgba(200, 166, 74, 0)");
+        } else {
+          grad.addColorStop(0, "rgba(46, 42, 37, 0.3)");
+          grad.addColorStop(0.55, "rgba(46, 42, 37, 0.08)");
+          grad.addColorStop(1, "rgba(46, 42, 37, 0)");
+        }
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 256, 256);
+      }
+      return sprite;
+    };
+
+    const setup = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      canvas.width = Math.max(320, Math.floor(width / 2));
+      canvas.height = Math.max(240, Math.floor(height / 2));
+      const count = width < 720 ? 4 : 6;
+      wisps = [];
+      for (let i = 0; i < count; i++) {
+        const gold = i >= count - 2;
+        wisps.push({
+          sprite: makeSprite(gold),
+          bx: Math.random(),
+          by: Math.random(),
+          r: (0.3 + Math.random() * 0.22) * (gold ? 0.7 : 1),
+          amp: 0.05 + Math.random() * 0.05,
+          speed: 0.05 + Math.random() * 0.06,
+          phase: Math.random() * Math.PI * 2,
+          peak: gold ? 0.5 : 0.62
+        });
+      }
+    };
+
+    const draw = (t: number) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const wisp of wisps) {
+        const x = (wisp.bx + wisp.amp * Math.sin(t * wisp.speed + wisp.phase)) * canvas.width;
+        const y = (wisp.by + wisp.amp * Math.cos(t * wisp.speed * 0.83 + wisp.phase * 1.7)) * canvas.height;
+        const r = wisp.r * canvas.width;
+        ctx.globalAlpha = wisp.peak * (0.6 + 0.4 * Math.sin(t * 0.11 + wisp.phase));
+        ctx.drawImage(wisp.sprite, x - r, y - r, r * 2, r * 2);
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    const tick = (ts: number) => {
+      if (ts - last >= FRAME_MS) {
+        last = ts;
+        draw(ts / 1000);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    const start = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(tick);
+    };
+
+    setup();
+    if (reduced) {
+      draw(6); // 静态一帧：纹理仍在，只是不游移
+      return () => undefined;
+    }
+
+    const onVisibility = () => {
+      if (document.hidden) cancelAnimationFrame(raf);
+      else start();
+    };
+    let resizeTimer = 0;
+    const onResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(setup, 200);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("resize", onResize);
+    start();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(resizeTimer);
+    };
+  }, []);
+
+  return (
+    <>
+      <canvas ref={canvasRef} className="ink-canvas" aria-hidden="true" />
+      <div className="paper-grain" aria-hidden="true" />
+      <div className="ink-blot" aria-hidden="true" />
+    </>
+  );
+}
+
 // 鼠标跟随的水光效果：暖金光晕以缓动追随指针，点击处泛开一圈涟漪。
 // 全程只用 transform/opacity（GPU 合成动画，不触发重排重绘），rAF 单循环 + 被动监听，
 // 触屏设备与 prefers-reduced-motion 用户自动停用——性能开销可忽略。
@@ -1682,6 +1838,8 @@ export default function Home() {
   const [profile, setProfile] = useState<BaziProfile | null>(null);
   const [stage, setStage] = useState<"birth" | "intro" | "questions" | "result" | "plans">("birth");
   const [loading, setLoading] = useState(false);
+  // 排盘只需约 1 秒，用按钮内轻量转圈，不弹全屏 overlay；全屏「时间之河」保留给诊断/计划生成
+  const [baziLoading, setBaziLoading] = useState(false);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [diagnosisDraft, setDiagnosisDraft] = useState<DiagnosisDraftResponse | null>(null);
@@ -1694,7 +1852,7 @@ export default function Home() {
   const activeStep = stage === "birth" || stage === "intro" ? 0 : stage === "questions" ? 1 : stage === "result" ? 2 : 3;
 
   async function submitBirthInfo() {
-    setLoading(true);
+    setBaziLoading(true);
     setError("");
 
     try {
@@ -1733,7 +1891,7 @@ export default function Home() {
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "排盘失败");
     } finally {
-      setLoading(false);
+      setBaziLoading(false);
     }
   }
 
@@ -1934,24 +2092,17 @@ export default function Home() {
 
   return (
     <main className="app-shell">
+      <InkBackground />
       <WaterFX />
       {loading ? <OdysseyLoading /> : null}
       <div className="workspace">
         <ProfileSidebar profile={profile} activeStep={activeStep} />
 
         <section className="main-panel">
-          <header className="main-header">
-            <div className="header-actions">
-              <button className="icon-button" onClick={exportHtml} title="导出 HTML 报告" disabled={!profile}>
-                <Download size={18} />
-              </button>
-            </div>
-          </header>
-
           {error && stage !== "birth" ? <div className="global-error notice">{error}</div> : null}
 
           {stage === "birth" ? (
-            <BirthPanel birthForm={birthForm} setBirthForm={setBirthForm} onSubmit={submitBirthInfo} loading={loading} error={error} />
+            <BirthPanel birthForm={birthForm} setBirthForm={setBirthForm} onSubmit={submitBirthInfo} loading={baziLoading} error={error} />
           ) : null}
 
           {stage === "intro" && profile ? <BaziIntro profile={profile} onStart={() => setStage("questions")} /> : null}
@@ -2067,6 +2218,10 @@ export default function Home() {
           ) : null}
 
           {stage === "plans" ? <PlansPanel plans={plans} /> : null}
+
+          <button className="download-fab" onClick={exportHtml} title="导出 HTML 报告" aria-label="导出 HTML 报告" disabled={!profile}>
+            <Download size={18} />
+          </button>
         </section>
       </div>
     </main>
