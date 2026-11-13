@@ -325,9 +325,9 @@ export const redDotQuestions: RedDotQuestion[] = [
   },
   {
     id: 12,
-    theme: "强制排序",
-    prompt: "请选出你最想追求的 Top 3 红点。如果 Top 1 和 Top 2 发生冲突，你会先保哪一个？",
-    probes: ["这个排序是你真实想要的，还是你觉得自己应该想要的？", "为了 Top 1，你愿意长期投入什么代价？"],
+    theme: "最终取舍",
+    prompt: "你的 Top 3 已在上题排定。最后一步取舍：如果未来三年只允许把一个红点作为主轴全力推进，且必须为此接受真实的代价，你会选哪个？这个代价是什么？",
+    probes: ["Top 1 和 Top 2 若只能活一个，你保哪个？用一句话说服自己。", "为了主轴红点，你愿意放弃或暂时搁置什么？这个代价你承受得起吗？", "这个选择是你真实想要的，还是你觉得自己应该想要的？"],
     evidenceTags: ["helping", "making", "craft", "understanding", "novelty"]
   }
 ];

@@ -845,11 +845,11 @@ function QuestionPanel({
                   </>
                 ) : isRankingStep ? (
                   <>
-                    <h4>Top 3 强制排序</h4>
+                    <h4>最终取舍 · 承诺与退路</h4>
                     {rankingLoading ? (
-                      <p className="shortlist-status">正在结合你的全部回答，为三个红点提炼最关键的抉择问题，请稍候…</p>
+                      <p className="shortlist-status">正在结合你的全部回答，为 Top 1 与退路红点分别提炼代价场景式的抉择问题，请稍候…</p>
                     ) : (
-                      <p>这是你确认的三个红点。每个都附有一段结合你全部回答的描述，和一道最关键的抉择问题——放在这里，供你判断。凭读完问题后的直觉，在下方写下你的最终倾向即可。</p>
+                      <p>上一题你已排出 Top 3，这一题不再选红点，只做最后的取舍确认。下面三张卡各附一道抉择问题，每道都会把你推向一个真实的代价场景。读完凭直觉，在下方写下你的最终倾向：哪一个成为未来三年的主轴、你愿意为它接受什么。</p>
                     )}
                     <div className="ranking-prompt-list">
                       {confirmedRedDots.map((dotId) => {

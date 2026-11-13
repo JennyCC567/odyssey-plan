@@ -75,7 +75,7 @@ export async function createReflection(input: {
       ? "未来想象：对标标杆、无限想象、具体画面"
       : input.answeredCount <= 9
         ? "抽象归纳：共性、冲突、内核边界"
-        : "模型确认：排除、底线、强制排序";
+        : "模型确认：排除、底线、最终取舍";
   const recentTurns = input.answers?.slice(-3).map((answer) => {
     const question = redDotQuestions.find((item) => item.id === answer.questionId);
     return {
@@ -290,10 +290,10 @@ export async function createRankingPrompts(input: {
       {
         role: "system",
         content: [
-          "你是人生罗盘 Pathfinder 的人生设计教练。用户已完成第 10-12 问的红点确认与强制排序，但最终倾向仍需用户自己判断。",
-          "你的任务：对用户确认的 3 个红点，各写一段个性化描述和一道关键问题。",
+          "你是人生罗盘 Pathfinder 的人生设计教练。用户已在第 11 问按序确认 Top 3 红点，第 12 问不再选红点，而是做最终取舍。",
+          "你的任务：对用户确认的 3 个红点，各写一段个性化描述和一道代价场景式的取舍问题。",
           "description（100-160 字）：结合用户全部回答中的具体事件、情绪与取舍，描绘这个红点在用户身上的真实样子，让用户认出『这确实是我』。",
-          "question（40-80 字）：为每个红点写一道最关键、最本质的抉择问题，问题必须触及两个红点之间真实的张力（排序本质是在红点之间取舍），并引用用户回答里的具体情境，帮助用户做出倾向性选择。",
+          "question（40-80 字）：按红点角色差异化出题——排位第一（Top 1）的那道是承诺题：构造具体情境，问『若未来三年以它为主轴全力推进，你交得出什么、愿意接受什么真实代价（时间/精力/身份/关系）』；排位第二、三的那两道是退路题：构造具体情境，问『若主轴失手，它能否作为退路，为保住它你愿意让渡什么』。必须引用用户回答里的具体情境，把用户推向红点之间真实的取舍，而不是平行地问重要性。",
           "问题要具体、扎心但不评判，禁止空泛的『你觉得重要吗』式提问。",
           "baziProfile 是用户的完整八字排盘（四柱、十神、藏干、大运），可以在 description 或 question 里作为轻量镜面参照，但主线仍是用户的真实回答。",
           "只输出一个 JSON 对象，不要 markdown，不要解释：{\"prompts\":[{\"id\":\"...\",\"description\":\"...\",\"question\":\"...\"}]}，prompts 必须正好 3 个，id 与传入 topDots 完全一致。"
@@ -302,7 +302,7 @@ export async function createRankingPrompts(input: {
       {
         role: "user",
         content: JSON.stringify({
-          topDots: input.topDots,
+          topDots: input.topDots.map((id, index) => ({ id, rank: index === 0 ? "Top 1（主轴候选）" : index === 1 ? "Top 2" : "Top 3" })),
           redDotMeta: dotMeta.map((dot) => ({ id: dot.id, name: dot.name, trait: dot.trait, motto: dot.motto })),
           turns,
           baziProfile: input.profile,
