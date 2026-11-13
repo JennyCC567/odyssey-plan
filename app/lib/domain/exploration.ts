@@ -444,51 +444,64 @@ export async function createSingleOdysseyPlan(input: {
   const baselinePlans = generateOdysseyPlans(input.topDots, input.direction);
   const fallbackPlan = baselinePlans.find((plan) => plan.kind === kind) ?? baselinePlans[0];
   const kindLabels: Record<OdysseyPlan["kind"], string> = {
-    current: "current = 现有轨迹的优化版（沿当前资源往前走）",
-    alternate: "alternate = 计划一消失后的转向版（假如现在的路径突然不存在）",
-    ideal: "ideal = 不考虑金钱、形象与他人期待的版本"
+    current: "current = 计划一「你已拥有的生活」：现有轨迹的优化版，沿当前资源往前走",
+    alternate: "alternate = 计划二「如果计划一突然消失」：假如计划一赖以存在的载体（岗位/平台/收入/核心关系）突然不再成立，用户转向的新路径",
+    ideal: "ideal = 计划三「不考虑金钱与形象」：同一组红点，剥离金钱、体面与他人期待约束后的版本"
+  };
+  const kindLinkage: Record<OdysseyPlan["kind"], string> = {
+    current: "current 是三版的锚点：把用户当前已有的资源、身份与节奏写成可优化的具体起点，为后两版的转向与理想化提供参照。",
+    alternate: "承接要求：alternate 必须显式承接 current——先点明计划一赖以存在的关键载体是什么、它消失后哪些能力、资源与伙伴可以带走迁移，再展开转向后的新路径；不要写成与计划一无关的通用转型模板。",
+    ideal: "承接要求：ideal 保持同一组红点不变，但剥离金钱、形象与他人期待的约束——说明计划一里哪些部分会被保留、哪些被压抑的渴望会释放出来，让用户看见理想版与现实版的真实差距，而不是另起炉灶的空想。"
   };
   const previouslyGenerated = input.previouslyGenerated ?? [];
 
-  const llm = await runJsonCompletion({
-    task: "odyssey-plan",
-    schema: odysseyPlanOutputSchema,
-    temperature: 0.55,
-    maxTokens: 8192,
-    timeoutMs: 120000,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "你是人生罗盘 Pathfinder 的人生设计教练。",
-          "你要基于用户确认的 Top 3 人生红点和探索方向，生成五年奥德赛计划（斯坦福人生设计课方法）。",
-          "三版的设定：current = 现有轨迹的优化版（沿当前资源往前走）；alternate = 计划一消失后的转向版（假如现在的路径突然不存在）；ideal = 不考虑金钱、形象与他人期待的版本。",
-          "每版必须包含：五年时间线（每年一个主题 + 具体动作）、四维仪表盘（资源/喜爱/自信/一致性 0-10 分）、风险排查（3 个障碍 + 排查方式）、原型实验（2 个低成本可执行的体验式学习）、以及 3 张路径卡。",
-          "路径卡规则：能力卡（细分类别如技术能力/专项能力/管理能力）、资源卡（细分类别如 人脉团队/商业资产/认知声誉）、进步卡（细分类别如实践驱动/认知驱动/体系驱动）各一张，每张卡 2-4 条具体可执行的动作。",
-          "计划必须个性化：结合用户十二问的真实回答、命理镜面的完整排盘（baziProfile 含四柱、十神、藏干、大运轨迹，可作为节奏与性格参照）来写，不要写成通用模板。计划要具体、可低成本试验，不要鸡汤化，不要命定化，不要替用户做绝对判断。",
-          "注意：risks 和 prototypes 必须是字符串数组，每项一句话（风险一项里写清障碍和排查方式），不要写成对象。",
-          `本次只生成 kind = ${kind} 的那一版：${kindLabels[kind]}。`,
-          previouslyGenerated.length
-            ? "已经为用户生成的前几版见 previouslyGenerated，这一版必须在定位、标题、五年主题上与它们明显区分，不能重复相同的路径叙事。"
-            : "这是三版中的第一版。",
-          "只输出一个 JSON 对象，不要 markdown，不要解释。"
-        ].join("\n")
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          kind,
-          direction: input.direction || "一个更适合自己的职业方向",
-          topRedDots: input.topDots.map((id) => redDotById[id]),
-          allRedDots: redDots,
-          answers: input.answers ? buildAnswersContext(input.answers) : undefined,
-          baziProfile: input.profile,
-          previouslyGenerated: previouslyGenerated.length ? previouslyGenerated : undefined,
-          outputShape: "One plan object: title, kind, thesis(不超过 300 字), dashboard(键名固定为 resources/love/confidence/coherence，0-10 整数), timeline 长度 5(每项 {year: \"第1年\"..\"第5年\" 字符串, theme: 不超过 24 字, focus: 一句具体描述}), risks 长度 3, prototypes 长度 2, firstYearCards 长度 3 (每张卡有 type 能力/资源/进步, category, title, actions 为 2-4 条字符串数组). 所有文字必须原创撰写，不要照抄任何基线或示例。"
-        })
-      }
-    ]
-  });
+  const buildPlanRequest = () =>
+    runJsonCompletion({
+      task: "odyssey-plan",
+      schema: odysseyPlanOutputSchema,
+      temperature: 0.55,
+      maxTokens: 8192,
+      timeoutMs: 120000,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你是人生罗盘 Pathfinder 的人生设计教练。",
+            "你要基于用户确认的 Top 3 人生红点和探索方向，生成五年奥德赛计划（斯坦福人生设计课方法）。",
+            "三版的设定：current = 计划一「你已拥有的生活」；alternate = 计划二「如果计划一突然消失」；ideal = 计划三「不考虑金钱与形象」。三版共享同一组 Top 3 红点作为锚点，差别只在约束条件，是同一人生的三个约束变体，不是三个无关赛道。",
+            "每版必须包含：五年时间线（每年一个主题 + 具体动作）、四维仪表盘（资源/喜爱/自信/一致性 0-10 分）、风险排查（3 个障碍 + 排查方式）、原型实验（2 个低成本可执行的体验式学习）、以及 3 张路径卡。",
+            "路径卡规则：能力卡（细分类别如技术能力/专项能力/管理能力）、资源卡（细分类别如 人脉团队/商业资产/认知声誉）、进步卡（细分类别如实践驱动/认知驱动/体系驱动）各一张，每张卡 2-4 条具体可执行的动作。",
+            "计划必须个性化：结合用户十二问的真实回答、命理镜面的完整排盘（baziProfile 含四柱、十神、藏干、大运轨迹，可作为节奏与性格参照）来写，不要写成通用模板。计划要具体、可低成本试验，不要鸡汤化，不要命定化，不要替用户做绝对判断。颗粒度对齐：每年的 focus 要落到可验证的具体动作和数字，风险要写「排查信号 + 触发后的应对」，与计划一的详细程度保持一致。",
+            "注意：risks 和 prototypes 必须是字符串数组，每项一句话（风险一项里写清障碍和排查方式），不要写成对象。",
+            `本次只生成 kind = ${kind} 的那一版：${kindLabels[kind]}。${kindLinkage[kind]}`,
+            previouslyGenerated.length
+              ? "已经为用户生成的前几版见 previouslyGenerated（其中 kind 为 current 的即「计划一」），这一版必须在定位、标题、五年主题上与它们明显区分，不能重复相同的路径叙事；提及计划一时直接用「计划一」指代。"
+              : "这是三版中的第一版（计划一）。",
+            "只输出一个 JSON 对象，不要 markdown，不要解释。"
+          ].join("\n")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            kind,
+            direction: input.direction || "一个更适合自己的职业方向",
+            topRedDots: input.topDots.map((id) => redDotById[id]),
+            allRedDots: redDots,
+            answers: input.answers ? buildAnswersContext(input.answers) : undefined,
+            baziProfile: input.profile,
+            previouslyGenerated: previouslyGenerated.length ? previouslyGenerated : undefined,
+            outputShape: "One plan object: title, kind, thesis(不超过 300 字), dashboard(键名固定为 resources/love/confidence/coherence，0-10 整数), timeline 长度 5(每项 {year: \"第1年\"..\"第5年\" 字符串, theme: 不超过 24 字, focus: 一句具体描述}), risks 长度 3, prototypes 长度 2, firstYearCards 长度 3 (每张卡有 type 能力/资源/进步, category, title, actions 为 2-4 条字符串数组). 所有文字必须原创撰写，不要照抄任何基线或示例。"
+          })
+        }
+      ]
+    });
+
+  // 失败自动重试一次（含 schema 校验失败、超时），避免静默退到通用模板导致颗粒度骤降
+  let llm = await buildPlanRequest();
+  if (!llm.ok) {
+    console.warn(`odyssey-plan:${kind} first attempt failed, retrying:`, llm.error);
+    llm = await buildPlanRequest();
+  }
 
   const plan: OdysseyPlan = llm.ok
     ? { ...llm.data, kind }

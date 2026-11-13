@@ -1327,9 +1327,9 @@ function ResultPanel({
 const PLAN_KIND_ORDER: OdysseyPlan["kind"][] = ["current", "alternate", "ideal"];
 
 const planKindMeta: Record<OdysseyPlan["kind"], { label: string; tag: string }> = {
-  current: { label: "计划一 · 现有轨迹优化版", tag: "CURRENT" },
-  alternate: { label: "计划二 · 备选转向版", tag: "ALTERNATE" },
-  ideal: { label: "计划三 · 理想版", tag: "IDEAL" }
+  current: { label: "计划一 · 你已拥有的生活", tag: "CURRENT" },
+  alternate: { label: "计划二 · 如果计划一突然消失", tag: "ALTERNATE" },
+  ideal: { label: "计划三 · 不考虑金钱与形象", tag: "IDEAL" }
 };
 
 function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
@@ -1782,26 +1782,9 @@ export default function Home() {
               onGeneratePlans={async (topDots) => {
                 setError("");
 
-                try {
-                  await fetch("/api/diagnosis/confirm", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                      sessionId: sessionId || undefined,
-                      finalRedDots: topDots
-                    })
-                  });
-
-                  setPlans([]);
-                  setStage("plans");
-
-                  // 三版逐个请求：单版耗时短，可适配 serverless 单函数时限
-                  const kinds: OdysseyPlan["kind"][] = ["current", "alternate", "ideal"];
-                  const previous: Array<{ kind: string; title: string; thesis: string; timelineThemes: string[] }> = [];
-
-                  for (const kind of kinds) {
+                // 计划一先行，计划二三并行（都参考计划一的摘要，保证承接逻辑，同时省一半等待）
+                  type PlanSummary = { kind: string; title: string; thesis: string; timelineThemes: string[] };
+                  const requestPlan = async (kind: OdysseyPlan["kind"], previous: PlanSummary[]) => {
                     const response = await fetch("/api/odyssey/plans", {
                       method: "POST",
                       headers: {
@@ -1823,18 +1806,57 @@ export default function Home() {
                       throw new Error(data?.message ?? "生成奥德赛计划失败");
                     }
 
-                    const data = (await response.json()) as { plan: OdysseyPlan };
-                    setPlans((prev2) => [...prev2.filter((item) => item.kind !== data.plan.kind), data.plan]);
-                    previous.push({
-                      kind: data.plan.kind,
-                      title: data.plan.title,
-                      thesis: data.plan.thesis,
-                      timelineThemes: data.plan.timeline.map((item) => item.theme)
+                    return ((await response.json()) as { plan: OdysseyPlan }).plan;
+                  };
+
+                  try {
+                    await fetch("/api/diagnosis/confirm", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        sessionId: sessionId || undefined,
+                        finalRedDots: topDots
+                      })
                     });
+
+                    setPlans([]);
+                    setStage("plans");
+
+                    const currentPlan = await requestPlan("current", []);
+                    setPlans((prev2) => [...prev2.filter((item) => item.kind !== currentPlan.kind), currentPlan]);
+
+                    const currentSummary: PlanSummary[] = [
+                      {
+                        kind: currentPlan.kind,
+                        title: currentPlan.title,
+                        thesis: currentPlan.thesis,
+                        timelineThemes: currentPlan.timeline.map((item) => item.theme)
+                      }
+                    ];
+
+                    const restResults = await Promise.allSettled([
+                      requestPlan("alternate", currentSummary),
+                      requestPlan("ideal", currentSummary)
+                    ]);
+
+                    const failedKinds: string[] = [];
+                    restResults.forEach((result, index) => {
+                      if (result.status === "fulfilled") {
+                        const plan = result.value;
+                        setPlans((prev2) => [...prev2.filter((item) => item.kind !== plan.kind), plan]);
+                      } else {
+                        failedKinds.push(index === 0 ? "计划二" : "计划三");
+                      }
+                    });
+
+                    if (failedKinds.length) {
+                      setError(`${failedKinds.join("、")}生成失败，其余版本已就绪，请稍后重试。`);
+                    }
+                  } catch (requestError) {
+                    setError(requestError instanceof Error ? requestError.message : "生成奥德赛计划失败");
                   }
-                } catch (requestError) {
-                  setError(requestError instanceof Error ? requestError.message : "生成奥德赛计划失败");
-                }
               }}
             />
           ) : null}
