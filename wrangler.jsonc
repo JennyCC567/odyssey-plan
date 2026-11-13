@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "odyssey-plan",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // 非敏感环境变量；密钥用 `npx wrangler secret put OPENAI_API_KEY` 配置
+  "vars": {
+    "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+    "OPENAI_MODEL": "moonshotai/kimi-k3.1-pro",
+    "OPENAI_SAMPLING_PARAM": "off",
+    "OPENAI_REASONING_EFFORT": "low",
+    "PATHFINDER_LLM_TIMEOUT_MS": "90000"
+  }
+}

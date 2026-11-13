@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createBaziReflection, type BaziProfile } from "../bazi";
+import { baziSkillFiles } from "../baziSkillContent";
 import { getGenerationSource, runJsonCompletion } from "../llm/client";
 import {
   baziReflectionOutputSchema,
@@ -49,25 +48,12 @@ export function normalizeAnswerTags(answer: ExplorationAnswer, allowedTags?: Evi
   };
 }
 
-const baziSkillFiles = [
-  "SKILL.md",
-  "references/wangshui-judgment.md",
-  "references/yongshen-selection.md",
-  "references/verification-questions.md"
-];
 let baziSkillContextCache: string | null = null;
 
 function loadBaziSkillContext(): string {
   if (baziSkillContextCache !== null) return baziSkillContextCache;
-  const base = join(process.cwd(), "八字命理分析");
-  const sections: string[] = [];
-  for (const file of baziSkillFiles) {
-    try {
-      sections.push(`=== ${file} ===\n${readFileSync(join(base, file), "utf8")}`);
-    } catch {
-      // skill 资料缺失时跳过该文件，不阻断镜像生成
-    }
-  }
+  // Skill 内容在构建期内嵌（见 scripts/sync-bazi-skill.mjs），serverless 环境无需读文件
+  const sections = Object.entries(baziSkillFiles).map(([file, content]) => `=== ${file} ===\n${content}`);
   baziSkillContextCache = sections.join("\n\n");
   return baziSkillContextCache;
 }
