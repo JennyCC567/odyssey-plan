@@ -1705,6 +1705,60 @@ button:disabled {
   line-height: 1.7;
 }
 
+/* ---- 鼠标水光效果（仅 transform/opacity 合成动画） ---- */
+
+.cursor-halo {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(200, 166, 74, 0.14) 0%,
+    rgba(200, 166, 74, 0.06) 38%,
+    transparent 70%
+  );
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+  z-index: 80;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  will-change: transform;
+}
+
+.water-ripple {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(168, 130, 42, 0.5);
+  pointer-events: none;
+  z-index: 80;
+  animation: water-ripple 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes water-ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+
+  to {
+    transform: scale(15);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-halo,
+  .water-ripple {
+    display: none;
+  }
+}
+
 /* ---- 三版计划可视化 ---- */
 
 .plan-boot {

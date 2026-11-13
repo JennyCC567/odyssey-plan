@@ -1431,6 +1431,66 @@ function PlanBootScreen() {
   );
 }
 
+// 鼠标跟随的水光效果：暖金光晕以缓动追随指针，点击处泛开一圈涟漪。
+// 全程只用 transform/opacity（GPU 合成动画，不触发重排重绘），rAF 单循环 + 被动监听，
+// 触屏设备与 prefers-reduced-motion 用户自动停用——性能开销可忽略。
+function WaterFX() {
+  const haloRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (window.matchMedia("(hover: none)").matches) return;
+
+    const halo = haloRef.current;
+    if (!halo) return;
+
+    let targetX = window.innerWidth / 2;
+    let targetY = window.innerHeight / 3;
+    let x = targetX;
+    let y = targetY;
+    let raf = 0;
+    let shown = false;
+
+    const onMove = (event: PointerEvent) => {
+      targetX = event.clientX;
+      targetY = event.clientY;
+      if (!shown) {
+        shown = true;
+        halo.style.opacity = "1";
+      }
+    };
+
+    const tick = () => {
+      x += (targetX - x) * 0.12;
+      y += (targetY - y) * 0.12;
+      halo.style.transform = `translate3d(${(x - 170).toFixed(1)}px, ${(y - 170).toFixed(1)}px, 0)`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    const onDown = (event: PointerEvent) => {
+      const ripple = document.createElement("span");
+      ripple.className = "water-ripple";
+      ripple.style.left = `${event.clientX}px`;
+      ripple.style.top = `${event.clientY}px`;
+      document.body.appendChild(ripple);
+      ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onDown, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onDown);
+    };
+  }, []);
+
+  return <div ref={haloRef} className="cursor-halo" aria-hidden="true" />;
+}
+
 function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
   return (
     <article className="plan-card is-skeleton" key={`skeleton-${kind}`}>
@@ -1874,6 +1934,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
+      <WaterFX />
       {loading ? <OdysseyLoading /> : null}
       <div className="workspace">
         <ProfileSidebar profile={profile} activeStep={activeStep} />
