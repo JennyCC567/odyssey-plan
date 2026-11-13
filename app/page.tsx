@@ -1395,6 +1395,42 @@ function Radar({ svg }: { svg: string }) {
   return <div className="radar" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
+// 莫比乌斯环加载动画：三色渐变的光点沿「8」字环追逐，暗示三版计划在同一循环中推演
+function MobiusLoader() {
+  const loopPath =
+    "M40,70 C40,26 118,26 160,70 C202,114 280,114 280,70 C280,26 202,26 160,70 C118,114 40,114 40,70 Z";
+
+  return (
+    <svg className="mobius" viewBox="0 0 320 140" width="320" height="140" role="img" aria-label="推演中">
+      <defs>
+        <linearGradient id="mobius-grad-a" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#b08a3e" />
+          <stop offset="55%" stopColor="#4a7d78" />
+          <stop offset="100%" stopColor="#96607c" />
+        </linearGradient>
+        <linearGradient id="mobius-grad-b" x1="1" y1="0" x2="0" y2="0">
+          <stop offset="0%" stopColor="#96607c" />
+          <stop offset="55%" stopColor="#4a7d78" />
+          <stop offset="100%" stopColor="#b08a3e" />
+        </linearGradient>
+      </defs>
+      <path className="mobius-track" d={loopPath} pathLength="100" />
+      <path className="mobius-run mobius-run-a" d={loopPath} pathLength="100" />
+      <path className="mobius-run mobius-run-b" d={loopPath} pathLength="100" />
+    </svg>
+  );
+}
+
+function PlanBootScreen() {
+  return (
+    <div className="plan-boot">
+      <MobiusLoader />
+      <p className="plan-boot-title">正在沿莫比乌斯环推演你的三版人生</p>
+      <p className="plan-boot-sub">计划一 · 你已拥有的生活　→　计划二 · 如果计划一突然消失　→　计划三 · 不考虑金钱与形象</p>
+    </div>
+  );
+}
+
 function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
   return (
     <article className="plan-card is-skeleton" key={`skeleton-${kind}`}>
@@ -1470,6 +1506,15 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
         { size: 156 }
       )
     : "";
+
+  // 三版都未出现前，先整屏展示莫比乌斯环推演加载页；第一张卡出来后切回「已出卡片 + 骨架」网格
+  if (plans.length === 0) {
+    return (
+      <div className="content">
+        <PlanBootScreen />
+      </div>
+    );
+  }
 
   return (
     <div className="content">

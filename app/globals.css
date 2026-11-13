@@ -1706,6 +1706,85 @@ button:disabled {
 
 /* ---- 三版计划可视化 ---- */
 
+.plan-boot {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  min-height: 460px;
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.plan-boot-title {
+  margin: 6px 0 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  letter-spacing: 2px;
+}
+
+.plan-boot-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  letter-spacing: 1px;
+}
+
+.mobius {
+  display: block;
+  overflow: visible;
+  animation: mobius-breathe 4.8s ease-in-out infinite;
+}
+
+@keyframes mobius-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+.mobius-track {
+  fill: none;
+  stroke: rgba(36, 33, 29, 0.12);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.mobius-run {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 16 84;
+  animation: mobius-chase 2.6s linear infinite;
+}
+
+.mobius-run-a {
+  stroke: url(#mobius-grad-a);
+  filter: drop-shadow(0 0 6px rgba(200, 166, 74, 0.45));
+}
+
+.mobius-run-b {
+  stroke: url(#mobius-grad-b);
+  filter: drop-shadow(0 0 6px rgba(150, 96, 124, 0.4));
+  animation-delay: -1.3s;
+  opacity: 0.75;
+}
+
+@keyframes mobius-chase {
+  from {
+    stroke-dashoffset: 0;
+  }
+
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
 .radar {
   display: grid;
   place-items: center;
