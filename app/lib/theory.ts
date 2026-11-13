@@ -326,7 +326,7 @@ export const redDotQuestions: RedDotQuestion[] = [
   {
     id: 12,
     theme: "最终取舍",
-    prompt: "你的 Top 3 已在上题排定。最后一步取舍：如果未来三年只允许把一个红点作为主轴全力推进，且必须为此接受真实的代价，你会选哪个？这个代价是什么？",
+    prompt: "如果未来三年只允许把一个红点作为主轴全力推进，且必须为此接受真实的代价，你会选哪个？",
     probes: ["Top 1 和 Top 2 若只能活一个，你保哪个？用一句话说服自己。", "为了主轴红点，你愿意放弃或暂时搁置什么？这个代价你承受得起吗？", "这个选择是你真实想要的，还是你觉得自己应该想要的？"],
     evidenceTags: ["helping", "making", "craft", "understanding", "novelty"]
   }

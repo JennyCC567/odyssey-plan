@@ -1346,7 +1346,7 @@ type RadarSeries = { values: number[]; color: string };
 function radarChartSvg(series: RadarSeries[], options?: { size?: number; withLabels?: boolean }): string {
   const size = options?.size ?? 128;
   const withLabels = options?.withLabels ?? true;
-  const pad = withLabels ? 22 : 10;
+  const pad = withLabels ? 34 : 10;
   const cx = size / 2;
   const cy = size / 2;
   const R = size / 2 - pad;
@@ -1880,9 +1880,6 @@ export default function Home() {
 
         <section className="main-panel">
           <header className="main-header">
-            <div>
-              <h2>从八字命理，到红点探索，再到奥德赛计划</h2>
-            </div>
             <div className="header-actions">
               <button className="icon-button" onClick={exportHtml} title="导出 HTML 报告" disabled={!profile}>
                 <Download size={18} />
