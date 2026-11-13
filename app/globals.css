@@ -564,8 +564,8 @@ button:disabled {
 
 .download-fab {
   position: absolute;
-  right: 30px;
-  bottom: 28px;
+  right: 26px;
+  top: 24px;
   width: 44px;
   height: 44px;
   display: inline-flex;
@@ -579,7 +579,7 @@ button:disabled {
   box-shadow: 0 10px 26px rgba(36, 33, 29, 0.14);
   backdrop-filter: blur(8px);
   transition: transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-  z-index: 40;
+  z-index: 60;
 }
 
 .download-fab:hover:not(:disabled) {
@@ -597,6 +597,86 @@ button:disabled {
   padding: 34px 42px 44px;
 }
 
+/* 出生信息页：撑满面板高度——标题在上、表单垂直居中、提示框贴底（底边距与顶边距一致） */
+.content.is-birth {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 48px);
+  padding-bottom: 34px;
+}
+
+/* 居中内容列：收窄版心，两侧留白随面板变宽而增加，避免表单横向拉满 */
+.birth-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 100%);
+  margin: 0 auto;
+}
+
+.form-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* 红点信条钩子：紧跟大标题，像一句引言，为后续十二问埋下好奇 */
+.dot-hooks {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.dot-hooks-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted-light);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+}
+
+.dot-hooks-label::before {
+  width: 30px;
+  height: 1px;
+  background: var(--gold);
+  content: "";
+}
+
+.dot-hooks-quote {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 30px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  animation: dot-quote-in 600ms ease;
+}
+
+.dot-hooks-name {
+  color: var(--muted-light);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+@keyframes dot-quote-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* 阶段内容整体抬到圆弧纹理之上，避免装饰线压在卡片上 */
 .main-panel > .content {
   position: relative;
@@ -605,7 +685,9 @@ button:disabled {
 
 .ritual-copy {
   max-width: 720px;
-  margin-bottom: 28px;
+  /* 标题与信条钩子之间留白收窄，钩子作为引言紧贴标题 */
+  margin-top: 10px;
+  margin-bottom: 26px;
 }
 
 .ritual-copy span {
@@ -636,7 +718,7 @@ button:disabled {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 14px;
+  gap: 20px 16px;
 }
 
 .field {
@@ -683,35 +765,64 @@ button:disabled {
 }
 
 .city-combobox {
-  display: grid;
-  gap: 10px;
+  position: relative;
 }
 
-.city-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/* 城市搜索下拉：浮层覆盖在表单之上，不占布局空间 */
+.city-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: grid;
+  gap: 2px;
+  max-height: 244px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid rgba(36, 33, 29, 0.1);
+  border-radius: 14px;
+  background: rgba(253, 252, 248, 0.98);
+  box-shadow: 0 18px 40px rgba(36, 33, 29, 0.16);
+  backdrop-filter: blur(10px);
 }
 
 .city-option {
-  min-height: 32px;
-  border: 1px solid rgba(36, 33, 29, 0.1);
-  border-radius: 999px;
-  padding: 6px 11px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.42);
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 12px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  transition: background 140ms ease, color 140ms ease;
 }
 
-.city-option:hover,
+.city-option:hover {
+  background: rgba(36, 33, 29, 0.06);
+}
+
 .city-option.is-selected {
-  border-color: var(--accent);
   color: #fff;
   background: var(--accent);
 }
 
 .span-2 {
   grid-column: span 2;
+}
+
+/* 表单网格里的主按钮：与城市同排、贴底右对齐 */
+.field-action {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.field-action .primary-button {
+  min-width: 168px;
 }
 
 .span-3 {
@@ -853,7 +964,8 @@ button:disabled {
 
 .split-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.54fr);
+  /* 问题面板占大头，回答输入框随屏幕拉宽，避免宽屏下两侧大片空白 */
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.5fr);
   gap: 22px;
 }
 
@@ -866,6 +978,8 @@ button:disabled {
 }
 
 .question-panel-block {
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(251, 250, 246, 0.62)),
     radial-gradient(ellipse 65% 28% at 50% 12%, rgba(36, 33, 29, 0.045), transparent 74%);
@@ -970,9 +1084,20 @@ button:disabled {
   margin-top: 2px;
 }
 
+/* 问题面板内部纵向排布：输入框自动撑高（有上限），按钮紧跟输入框而不是贴面板底部 */
+.question-panel-block .panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .answer-box {
-  min-height: 168px;
-  resize: vertical;
+  width: 100%;
+  /* 高度由 JS 按内容自动计算，空态为两行，输入多少显示多少，不在框内滚动 */
+  flex: 0 0 auto;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .choice-grid {
@@ -1949,62 +2074,6 @@ button:disabled {
   color: var(--muted);
   font-size: 13.5px;
   letter-spacing: 1px;
-}
-
-.mobius {
-  display: block;
-  overflow: visible;
-  animation: mobius-breathe 4.8s ease-in-out infinite;
-}
-
-@keyframes mobius-breathe {
-  0%,
-  100% {
-    opacity: 0.9;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.03);
-  }
-}
-
-.mobius-track {
-  fill: none;
-  stroke: rgba(36, 33, 29, 0.12);
-  stroke-width: 7;
-  stroke-linecap: round;
-}
-
-.mobius-run {
-  fill: none;
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-dasharray: 16 84;
-  animation: mobius-chase 2.6s linear infinite;
-}
-
-.mobius-run-a {
-  stroke: url(#mobius-grad-a);
-  filter: drop-shadow(0 0 6px rgba(200, 166, 74, 0.45));
-}
-
-.mobius-run-b {
-  stroke: url(#mobius-grad-b);
-  filter: drop-shadow(0 0 6px rgba(150, 96, 124, 0.4));
-  animation-delay: -1.3s;
-  opacity: 0.75;
-}
-
-@keyframes mobius-chase {
-  from {
-    stroke-dashoffset: 0;
-  }
-
-  to {
-    stroke-dashoffset: -100;
-  }
 }
 
 .radar {

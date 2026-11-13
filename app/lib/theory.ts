@@ -130,7 +130,7 @@ export const redDots: RedDot[] = [
   },
   {
     id: "inner",
-    name: "内心型（求知）",
+    name: "求知型",
     shortName: "求知",
     quadrant: "理想主义 / 追求过程",
     trait: "以学习、理解和洞察世界为内在驱动力，享受认知被点亮的过程。",
@@ -139,8 +139,8 @@ export const redDots: RedDot[] = [
   },
   {
     id: "mastery",
-    name: "高手型（匠人）",
-    shortName: "高手",
+    name: "匠人型",
+    shortName: "匠人",
     quadrant: "理想主义 / 追求过程",
     trait: "追求在特定领域达到高水平，重视技艺、标准、长期练习和自我认同。",
     motto: "匠人精神，精益求精。",
@@ -175,7 +175,7 @@ export const redDots: RedDot[] = [
   },
   {
     id: "impact",
-    name: "成就型（利他）",
+    name: "成就型",
     shortName: "成就",
     quadrant: "理想主义 / 追求结果",
     trait: "以社会价值、帮助他人和推动改变为核心人生目标。",

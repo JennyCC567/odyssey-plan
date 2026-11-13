@@ -18,7 +18,7 @@ import {
   Waypoints
 } from "lucide-react";
 import { tenGodRelation, type BaziProfile, type TenGod } from "./lib/bazi";
-import { isSupportedCity, searchCities, supportedCities } from "./lib/cities";
+import { isSupportedCity, searchCities } from "./lib/cities";
 import {
   inferEvidenceTagsFromText,
   scoreRedDots,
@@ -113,17 +113,15 @@ const steps = [
   },
   {
     title: "三问一镜像",
-    copy: "每 3 问用命理回应一次，帮助坚持。",
+    copy: "每 3 问用命理回应一次，照见自己。",
     icon: Waypoints
   },
   {
     title: "奥德赛计划",
-    copy: "生成当前、备用、理想三版五年路径。",
+    copy: "生成三份不同人生轨迹的五年路径。",
     icon: Compass
   }
 ];
-
-const CITY_DATALIST_ID = "birth-city-options";
 
 function PillarView({ label, value, tenGod }: { label: string; value: string; tenGod?: string }) {
   return (
@@ -245,16 +243,37 @@ function BirthPanel({
   loading: boolean;
   error: string;
 }) {
+  const [cityOpen, setCityOpen] = useState(false);
+  const [hookIndex, setHookIndex] = useState(0);
   const cityMatches = useMemo(() => searchCities(birthForm.city, 8), [birthForm.city]);
   const cityIsValid = isSupportedCity(birthForm.city);
 
+  // 红点信条轮播：用九型红点的信条制造好奇，暗示后续十二问的探索方向
+  useEffect(() => {
+    const timer = setInterval(() => setHookIndex((index) => (index + 1) % redDots.length), 3600);
+    return () => clearInterval(timer);
+  }, []);
+  const hookDot = redDots[hookIndex];
+
   return (
-    <div className="content">
+    <div className="content is-birth">
+      <div className="birth-inner">
       <div className="ritual-copy">
         <span>初入海图</span>
         <h3>先借命盘起风，再把答案交还给你的经历。</h3>
       </div>
 
+      {/* 红点信条钩子：紧跟大标题，像一句引言，为后续十二问埋下好奇 */}
+      <div className="dot-hooks">
+        <span className="dot-hooks-label">九型人生红点 · 哪一句像你</span>
+        <p className="dot-hooks-quote" key={hookDot.id}>
+          「{hookDot.motto}」
+          <span className="dot-hooks-name">—— {hookDot.name}</span>
+        </p>
+      </div>
+
+      {/* 表单在标题与底部之间的剩余空间内垂直居中 */}
+      <div className="form-center">
       <div className="form-grid">
         <div className="field span-2">
           <label>出生年份</label>
@@ -291,46 +310,46 @@ function BirthPanel({
           <div className="city-combobox">
             <input
               value={birthForm.city}
-              onChange={(event) => setBirthForm({ ...birthForm, city: event.target.value })}
-              list={CITY_DATALIST_ID}
-              placeholder="搜索并选择城市"
+              onChange={(event) => {
+                setBirthForm({ ...birthForm, city: event.target.value });
+                setCityOpen(true);
+              }}
+              onFocus={() => setCityOpen(true)}
+              onBlur={() => setCityOpen(false)}
+              placeholder="输入拼音或中文搜索城市"
+              autoComplete="off"
             />
-            <datalist id={CITY_DATALIST_ID}>
-              {supportedCities.map((city) => (
-                <option key={city} value={city} />
-              ))}
-            </datalist>
-            <div className="city-suggestions" aria-label="城市候选">
-              {cityMatches.map((city) => (
-                <button
-                  className={birthForm.city === city ? "city-option is-selected" : "city-option"}
-                  key={city}
-                  onClick={() => setBirthForm({ ...birthForm, city })}
-                  type="button"
-                >
-                  {city}
-                </button>
-              ))}
-            </div>
+            {cityOpen && cityMatches.length ? (
+              // onMouseDown 阻止默认行为，避免点击选项前 input 先失焦关闭下拉
+              <div className="city-dropdown" onMouseDown={(event) => event.preventDefault()}>
+                {cityMatches.map((city) => (
+                  <button
+                    className={birthForm.city === city ? "city-option is-selected" : "city-option"}
+                    key={city}
+                    onClick={() => {
+                      setBirthForm({ ...birthForm, city });
+                      setCityOpen(false);
+                    }}
+                    type="button"
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           {birthForm.city.trim() && !cityIsValid ? <p className="field-hint is-error">请选择列表中的城市，省份暂不支持真太阳时校正。</p> : null}
         </div>
+        <div className="field-action span-2">
+          <button className="primary-button" onClick={onSubmit} disabled={loading || !cityIsValid}>
+            {loading ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
+            {loading ? "正在起盘…" : "生成命理画像"}
+          </button>
+        </div>
       </div>
-
-      <div className="notice">
-        <ScrollText size={18} />
-        <span>
-          命理分析在这里是趣味化入口，只提供观察角度。后续红点排序会以十二问回答、主动选择和取舍为主要依据。
-        </span>
       </div>
 
       {error ? <div className="notice">{error}</div> : null}
-
-      <div className="button-row">
-        <button className="primary-button" onClick={onSubmit} disabled={loading || !cityIsValid}>
-          {loading ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
-          {loading ? "正在起盘，推演四柱…" : "生成命理画像"}
-        </button>
       </div>
     </div>
   );
@@ -394,50 +413,7 @@ function BaziIntro({ profile, onStart }: { profile: BaziProfile; onStart: () => 
 function OdysseyLoading() {
   return (
     <div className="odyssey-overlay" role="status" aria-label="正在生成奥德赛计划">
-      <svg className="odyssey-scene" viewBox="0 0 320 210" width="320" height="210" aria-hidden="true">
-        <defs>
-          <linearGradient id="ribbonInk" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#2e2a24" stopOpacity="0.85" />
-            <stop offset="50%" stopColor="#a8813b" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#2e2a24" stopOpacity="0.85" />
-          </linearGradient>
-        </defs>
-        <path
-          className="odyssey-ribbon odyssey-ribbon-base"
-          d="M 58 104 C 58 62, 138 62, 160 102 C 182 142, 262 142, 262 100 C 262 58, 182 58, 160 98 C 138 138, 58 138, 58 104 Z"
-          fill="none"
-          stroke="url(#ribbonInk)"
-          strokeWidth="9"
-          strokeLinecap="round"
-          opacity="0.35"
-        />
-        <path
-          className="odyssey-ribbon odyssey-ribbon-flow"
-          d="M 58 104 C 58 62, 138 62, 160 102 C 182 142, 262 142, 262 100 C 262 58, 182 58, 160 98 C 138 138, 58 138, 58 104 Z"
-          fill="none"
-          stroke="url(#ribbonInk)"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeDasharray="26 50"
-        />
-        <path
-          className="odyssey-wave"
-          d="M 34 172 C 64 164, 94 180, 124 172 C 154 164, 184 180, 214 172 C 244 164, 268 178, 286 172"
-          fill="none"
-          stroke="#a8813b"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          opacity="0.5"
-          strokeDasharray="10 14"
-        />
-        <g className="odyssey-boat-track">
-          <g className="odyssey-boat-rock">
-            <path d="M -16 0 L 16 0 L 8 9 L -8 9 Z" fill="#2e2a24" opacity="0.82" />
-            <path d="M 1 -17 L 12 -3 L 1 -3 Z" fill="#a8813b" opacity="0.9" />
-            <path d="M -2 -12 L -10 -3 L -2 -3 Z" fill="#2e2a24" opacity="0.55" />
-          </g>
-        </g>
-      </svg>
+      <RiverLoader idSuffix="overlay" />
       <p className="odyssey-loading-text">正沿时间之河，绘制你的三版五年奥德赛计划</p>
       <p className="odyssey-loading-sub">路线越长，绘制越慢——大约需要一分钟，请稍候</p>
     </div>
@@ -539,6 +515,7 @@ function QuestionPanel({
     ? answers.find((answer) => answer.questionId === 11)?.confirmedRedDots ?? []
     : [];
   const [draft, setDraft] = useState(existing?.text ?? "");
+  const answerRef = useRef<HTMLTextAreaElement | null>(null);
   const [confirmedRedDots, setConfirmedRedDots] = useState<RedDotId[]>(existing?.confirmedRedDots ?? previousConfirmed);
   const [excludedRedDots, setExcludedRedDots] = useState<RedDotId[]>(existing?.excludedRedDots ?? []);
   const [shortlist, setShortlist] = useState<ShortlistResponse | null>(null);
@@ -547,6 +524,14 @@ function QuestionPanel({
   const [rankingLoading, setRankingLoading] = useState(false);
   const progress = answers.length;
   const showRedDotModel = question.id >= 10;
+
+  // 自适应高度：输入框始终完整显示已输入文字，不在框内滚动
+  useEffect(() => {
+    const el = answerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
   const isExclusionStep = question.id === 10;
   const isRankingStep = question.id === 12 && confirmedRedDots.length === 3;
   const ruleCandidates = useMemo(() => {
@@ -821,6 +806,7 @@ function QuestionPanel({
             <div className="field">
               <label>你的回答</label>
               <textarea
+                ref={answerRef}
                 className="answer-box"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -1413,28 +1399,40 @@ function Radar({ svg }: { svg: string }) {
   return <div className="radar" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
-// 莫比乌斯环加载动画：三色渐变的光点沿「8」字环追逐，暗示三版计划在同一循环中推演
-function MobiusLoader() {
+// 时间之河加载场景：墨色缎带河流 + 流动虚线 + 金色波纹 + 小舟往返（与全屏 overlay 同一母题）
+function RiverLoader({ idSuffix }: { idSuffix: string }) {
   const loopPath =
-    "M40,70 C40,26 118,26 160,70 C202,114 280,114 280,70 C280,26 202,26 160,70 C118,114 40,114 40,70 Z";
+    "M 58 104 C 58 62, 138 62, 160 102 C 182 142, 262 142, 262 100 C 262 58, 182 58, 160 98 C 138 138, 58 138, 58 104 Z";
+  const gradientId = `ribbonInk-${idSuffix}`;
 
   return (
-    <svg className="mobius" viewBox="0 0 320 140" width="320" height="140" role="img" aria-label="推演中">
+    <svg className="odyssey-scene" viewBox="0 0 320 210" width="320" height="210" role="img" aria-label="推演中">
       <defs>
-        <linearGradient id="mobius-grad-a" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#b08a3e" />
-          <stop offset="55%" stopColor="#4a7d78" />
-          <stop offset="100%" stopColor="#96607c" />
-        </linearGradient>
-        <linearGradient id="mobius-grad-b" x1="1" y1="0" x2="0" y2="0">
-          <stop offset="0%" stopColor="#96607c" />
-          <stop offset="55%" stopColor="#4a7d78" />
-          <stop offset="100%" stopColor="#b08a3e" />
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#2e2a24" stopOpacity="0.85" />
+          <stop offset="50%" stopColor="#a8813b" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#2e2a24" stopOpacity="0.85" />
         </linearGradient>
       </defs>
-      <path className="mobius-track" d={loopPath} pathLength="100" />
-      <path className="mobius-run mobius-run-a" d={loopPath} pathLength="100" />
-      <path className="mobius-run mobius-run-b" d={loopPath} pathLength="100" />
+      <path className="odyssey-ribbon-base" d={loopPath} fill="none" stroke={`url(#${gradientId})`} strokeWidth="9" strokeLinecap="round" opacity="0.35" />
+      <path className="odyssey-ribbon odyssey-ribbon-flow" d={loopPath} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3.5" strokeLinecap="round" strokeDasharray="26 50" />
+      <path
+        className="odyssey-wave"
+        d="M 34 172 C 64 164, 94 180, 124 172 C 154 164, 184 180, 214 172 C 244 164, 268 178, 286 172"
+        fill="none"
+        stroke="#a8813b"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        opacity="0.5"
+        strokeDasharray="10 14"
+      />
+      <g className="odyssey-boat-track">
+        <g className="odyssey-boat-rock">
+          <path d="M -16 0 L 16 0 L 8 9 L -8 9 Z" fill="#2e2a24" opacity="0.82" />
+          <path d="M 1 -17 L 12 -3 L 1 -3 Z" fill="#a8813b" opacity="0.9" />
+          <path d="M -2 -12 L -10 -3 L -2 -3 Z" fill="#2e2a24" opacity="0.55" />
+        </g>
+      </g>
     </svg>
   );
 }
@@ -1442,9 +1440,9 @@ function MobiusLoader() {
 function PlanBootScreen() {
   return (
     <div className="plan-boot">
-      <MobiusLoader />
-      <p className="plan-boot-title">正在沿莫比乌斯环推演你的三版人生</p>
-      <p className="plan-boot-sub">计划一 · 你已拥有的生活　→　计划二 · 如果计划一突然消失　→　计划三 · 不考虑金钱与形象</p>
+      <RiverLoader idSuffix="boot" />
+      <p className="plan-boot-title">正沿时间之河，绘制你的三版五年奥德赛计划</p>
+      <p className="plan-boot-sub">路线越长，绘制越慢——大约需要一分钟，请稍候</p>
     </div>
   );
 }
