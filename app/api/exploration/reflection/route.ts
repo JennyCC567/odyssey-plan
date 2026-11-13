@@ -21,3 +21,6 @@ export async function POST(request: Request) {
     })
   );
 }
+
+// Vercel 函数执行上限（Hobby 档会被钳制到 60s；Pro 可到 300s）
+export const maxDuration = 300;

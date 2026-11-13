@@ -3,6 +3,7 @@ node_modules/
 .next/
 .next.bak-*/
 out/
+tsconfig.tsbuildinfo
 .env*
 !.env.example
 .venv/

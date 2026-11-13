@@ -19,7 +19,12 @@ export async function POST(request: Request) {
     sessionId: parsed.data.sessionId,
     baziProfile: parsed.data.profile as BaziProfile | undefined
   });
-  const answers = saveAnswer(session.id, answer);
+  // 优先用客户端传入的完整历史（serverless 实例间无共享内存），store 仅作记录
+  const clientAnswers = parsed.data.answers
+    ? parsed.data.answers.map((item) => normalizeAnswerTags(item, redDotQuestions.find((q) => q.id === item.questionId)?.evidenceTags))
+    : undefined;
+  const stored = saveAnswer(session.id, answer);
+  const answers = clientAnswers ?? stored;
   const shouldReflect = parsed.data.shouldReflect ?? true;
   const reflection = shouldReflect && parsed.data.profile
     ? await createReflection({

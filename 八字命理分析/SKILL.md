@@ -40,13 +40,8 @@ pip install ephem
 
 **若信息缺失，请礼貌询问补全，不得调用排盘脚本**
 
-**2. 调用排盘脚本**
-参考下面的例子调用 `scripts/bazi_calculator.py`
-
-```bash
-cd bazi-expert && python scripts/bazi_calculator.py year=1990 month=1 day=1 hour=12 minute=0 gender="男" city="北京"
-```
-注意，其中的 city 需要是 `references/cities.json` 中的城市
+**2. 排盘**
+排盘由应用内置的历法引擎完成（四柱、真太阳时、节气、大运均已计算好并随请求提供），你无需调用任何脚本。排盘结果的解读参照本知识库与 references 下的判定方法。
 
 **3. 输出排盘结果**
 向用户展示排盘结果，包括：

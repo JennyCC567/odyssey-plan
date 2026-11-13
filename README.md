@@ -46,7 +46,7 @@ npm run dev
 http://localhost:3000
 ```
 
-当前环境已创建 `.venv` 并安装 `pytz`、`ephem`，可直接运行开发服务。
+排盘为纯 TypeScript 实现（`app/lib/bazi_calculator.ts`，基于内置节气表与 lunar-typescript），无需 Python 环境，可直接运行开发服务。
 
 ## 验证
 

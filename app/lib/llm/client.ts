@@ -88,6 +88,46 @@ function splitAnthropicMessages(messages: ChatMessage[]): { system?: string; mes
   };
 }
 
+function repairJsonQuotes(candidate: string): string {
+  // 修复字符串值里未转义的 ASCII 引号：不是闭合引号（后面跟 , } ] :）的就转义
+  const chars = [...candidate];
+  const out: string[] = [];
+  let inString = false;
+
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+
+    if (!inString) {
+      if (c === '"') inString = true;
+      out.push(c);
+      continue;
+    }
+
+    if (c === "\\") {
+      out.push(c, chars[i + 1] ?? "");
+      i++;
+      continue;
+    }
+
+    if (c === '"') {
+      let j = i + 1;
+      while (j < chars.length && /\s/.test(chars[j])) j++;
+      const next = chars[j];
+      if (next === "," || next === "}" || next === "]" || next === ":") {
+        inString = false;
+        out.push(c);
+      } else {
+        out.push('\\"');
+      }
+      continue;
+    }
+
+    out.push(c);
+  }
+
+  return out.join("");
+}
+
 function extractJsonObject(content: string): unknown {
   const trimmed = content.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -100,19 +140,41 @@ function extractJsonObject(content: string): unknown {
     const end = candidate.lastIndexOf("}");
 
     if (start >= 0 && end > start) {
-      return JSON.parse(candidate.slice(start, end + 1));
+      const slice = candidate.slice(start, end + 1);
+      try {
+        return JSON.parse(slice);
+      } catch {
+        return JSON.parse(repairJsonQuotes(slice));
+      }
     }
 
-    throw new Error("模型没有返回可解析的 JSON。 ");
+    throw new Error("模型没有返回可解析的 JSON。");
   }
 }
 
 export async function runJsonCompletion<T>(input: {
   task: string;
   messages: ChatMessage[];
-  schema: z.ZodType<T>;
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>;
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
+}): Promise<JsonGenerationResult<T>> {
+  const first = await attemptJsonCompletion(input);
+  // 网络瞬断（如 OpenRouter 偶发 fetch failed）自动重试一次
+  if (!first.ok && /fetch failed|network|ECONN|ETIMEDOUT/i.test(first.error)) {
+    return attemptJsonCompletion(input);
+  }
+  return first;
+}
+
+async function attemptJsonCompletion<T>(input: {
+  task: string;
+  messages: ChatMessage[];
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
 }): Promise<JsonGenerationResult<T>> {
   const runtime = getLlmRuntime();
   const source = getGenerationSource(input.task);
@@ -126,98 +188,134 @@ export async function runJsonCompletion<T>(input: {
     };
   }
 
-  const timeoutMs = Number(process.env.PATHFINDER_LLM_TIMEOUT_MS ?? 45000);
+  const timeoutMs = input.timeoutMs ?? Number(process.env.PATHFINDER_LLM_TIMEOUT_MS ?? 45000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const maxTokens = input.maxTokens ?? Number(process.env.PATHFINDER_LLM_MAX_TOKENS ?? 3000);
-    const response = runtime.provider === "anthropic-compatible"
-      ? await fetch(createAnthropicMessagesUrl(runtime.baseUrl), {
-          method: "POST",
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": process.env.ANTHROPIC_VERSION ?? "2023-06-01",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: runtime.model,
-            ...splitAnthropicMessages(input.messages),
-            temperature: input.temperature ?? 0.4,
-            max_tokens: maxTokens
-          }),
-          signal: controller.signal
-        })
-      : await fetch(createChatCompletionsUrl(runtime.baseUrl), {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: runtime.model,
-            messages: input.messages,
-            temperature: input.temperature ?? 0.4,
-            top_p: 0.8,
-            max_tokens: maxTokens
-          }),
-          signal: controller.signal
-        });
+    // 强制思考模型可能把 max_tokens 全部耗在思考上导致正文为空，此时加倍预算重试一次
+    const baseMaxTokens = input.maxTokens ?? Number(process.env.PATHFINDER_LLM_MAX_TOKENS ?? 16384);
+    let lastEmptyContent = false;
+    let parseFailed = false;
 
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      return {
-        ok: false,
-        error: `LLM request failed with ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
-        source
-      };
-    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const maxTokens = attempt === 0 ? baseMaxTokens : baseMaxTokens * 2;
+      const response = runtime.provider === "anthropic-compatible"
+        ? await fetch(createAnthropicMessagesUrl(runtime.baseUrl), {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": process.env.ANTHROPIC_VERSION ?? "2023-06-01",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: runtime.model,
+              ...splitAnthropicMessages(input.messages),
+              temperature: input.temperature ?? 0.4,
+              max_tokens: maxTokens
+            }),
+            signal: controller.signal
+          })
+        : await fetch(createChatCompletionsUrl(runtime.baseUrl), {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: runtime.model,
+              messages: input.messages,
+              ...(process.env.OPENAI_SAMPLING_PARAM === "off"
+                ? {}
+                : {
+                    temperature: input.temperature ?? 0.4,
+                    top_p: 0.8
+                  }),
+              max_tokens: maxTokens,
+              ...(process.env.OPENAI_REASONING_EFFORT
+                ? { reasoning_effort: process.env.OPENAI_REASONING_EFFORT }
+                : {}),
+              ...(process.env.OPENAI_THINKING_PARAM === "off"
+                ? {}
+                : {
+                    thinking: {
+                      type: "enabled",
+                      effort: process.env.PATHFINDER_THINKING_EFFORT ?? "low"
+                    }
+                  })
+            }),
+            signal: controller.signal
+          });
 
-    const payload = await response.json() as {
-      choices?: Array<{
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        return {
+          ok: false,
+          error: `LLM request failed with ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+          source
+        };
+      }
+
+      const payload = await response.json() as {
+        choices?: Array<{
+          message?: {
+            content?: string;
+          };
+        }>;
+        content?: Array<{
+          type?: string;
+          text?: string;
+          content?: string;
+          input?: unknown;
+        }>;
         message?: {
           content?: string;
         };
-      }>;
-      content?: Array<{
-        type?: string;
-        text?: string;
-        content?: string;
-        input?: unknown;
-      }>;
-      message?: {
-        content?: string;
+        output_text?: string;
       };
-      output_text?: string;
-    };
-    const content = runtime.provider === "anthropic-compatible"
-      ? (payload.content?.map((part) => part.text ?? part.content ?? (part.input ? JSON.stringify(part.input) : "")).join("\n").trim() ||
-          payload.choices?.[0]?.message?.content ||
-          payload.message?.content ||
-          payload.output_text)
-      : payload.choices?.[0]?.message?.content;
+      const content = runtime.provider === "anthropic-compatible"
+        ? (payload.content?.map((part) => part.text ?? part.content ?? (part.input ? JSON.stringify(part.input) : "")).join("\n").trim() ||
+            payload.choices?.[0]?.message?.content ||
+            payload.message?.content ||
+            payload.output_text)
+        : payload.choices?.[0]?.message?.content;
 
-    if (!content) {
-      return {
-        ok: false,
-        error: "LLM response did not include message content.",
-        source
-      };
-    }
+      if (!content) {
+        lastEmptyContent = true;
+        continue;
+      }
 
-    const parsed = input.schema.safeParse(extractJsonObject(content));
+      try {
+        const parsed = input.schema.safeParse(extractJsonObject(content));
 
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error: parsed.error.message,
-        source
-      };
+        if (!parsed.success) {
+          return {
+            ok: false,
+            error: parsed.error.message,
+            source
+          };
+        }
+
+        return {
+          ok: true,
+          data: parsed.data,
+          source
+        };
+      } catch {
+        // JSON 修复后仍不可解析：重新生成一次
+        lastEmptyContent = false;
+        parseFailed = true;
+        continue;
+      }
     }
 
     return {
-      ok: true,
-      data: parsed.data,
+      ok: false,
+      error: parseFailed
+        ? "LLM response JSON was not parseable after retry."
+        : lastEmptyContent
+          ? "LLM response did not include message content after retry."
+          : "LLM request failed.",
       source
     };
   } catch (error) {

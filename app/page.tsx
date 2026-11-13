@@ -1,27 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bookmark,
   Check,
+  ChevronDown,
   Compass,
   Download,
   Loader2,
   MessageSquareText,
-  RefreshCcw,
+  PenLine,
   ScrollText,
   Sparkles,
   Target,
   Waypoints
 } from "lucide-react";
-import type { BaziProfile } from "./lib/bazi";
+import { tenGodRelation, type BaziProfile, type TenGod } from "./lib/bazi";
 import { isSupportedCity, searchCities, supportedCities } from "./lib/cities";
 import {
-  analyzeDiagnosis,
   inferEvidenceTagsFromText,
   scoreRedDots,
-  type DiagnosisAnalysis,
   type ExplorationAnswer,
   type OdysseyPlan,
   type RedDotScore
@@ -56,6 +56,17 @@ type AnswerResponse = {
 
 type ReflectionResponse = {
   reflection: string;
+  keywords?: string[];
+  source: string;
+};
+
+type ShortlistResponse = {
+  candidates: Array<{ id: RedDotId; evidence: string }>;
+  source: string;
+};
+
+type RankingPromptsResponse = {
+  prompts: Array<{ id: RedDotId; description: string; question: string }>;
   source: string;
 };
 
@@ -65,19 +76,17 @@ type MirrorEntry = {
   theme: string;
   text: string;
   status: "loading" | "done" | "fallback";
+  note?: string;
+  keywords?: string[];
 };
 
 type DiagnosisDraftResponse = {
   draftId?: string;
   scores: RedDotScore[];
-  analysis: DiagnosisAnalysis;
   topScores: RedDotScore[];
-  source: string;
-};
-
-type PlansResponse = {
-  planId?: string;
-  plans: OdysseyPlan[];
+  top3Reasons: string[];
+  lifeInterpretation: string;
+  personPortrait: string;
   source: string;
 };
 
@@ -93,7 +102,7 @@ const defaultBirthForm: BirthForm = {
 
 const steps = [
   {
-    title: "轻命理开场",
+    title: "命理开场",
     copy: "只做兴趣入口和自我观察线索。",
     icon: Sparkles
   },
@@ -114,14 +123,14 @@ const steps = [
   }
 ];
 
-const MAX_FOLLOW_UP_QUESTIONS = 2;
 const CITY_DATALIST_ID = "birth-city-options";
 
-function PillarView({ label, value }: { label: string; value: string }) {
+function PillarView({ label, value, tenGod }: { label: string; value: string; tenGod?: string }) {
   return (
     <div className="pillar">
       <strong>{value}</strong>
       <span>{label}</span>
+      {tenGod ? <em className="pillar-ten-god">{tenGod}</em> : null}
     </div>
   );
 }
@@ -162,12 +171,12 @@ function ProfileSidebar({ profile, activeStep }: { profile: BaziProfile | null; 
       {profile ? (
         <>
           <div className="profile-card">
-            <h2>命理轻画像</h2>
+            <h2>命理画像</h2>
             <div className="pillar-grid">
-              <PillarView label="年柱" value={profile.pillars.year} />
-              <PillarView label="月柱" value={profile.pillars.month} />
-              <PillarView label="日柱" value={profile.pillars.day} />
-              <PillarView label="时柱" value={profile.pillars.hour} />
+              <PillarView label="年柱" value={profile.pillars.year} tenGod={profile.tenGods?.year} />
+              <PillarView label="月柱" value={profile.pillars.month} tenGod={profile.tenGods?.month} />
+              <PillarView label="日柱" value={profile.pillars.day} tenGod="日主" />
+              <PillarView label="时柱" value={profile.pillars.hour} tenGod={profile.tenGods?.hour} />
             </div>
 
             <div className="energy-list">
@@ -302,7 +311,7 @@ function BirthPanel({
       <div className="button-row">
         <button className="primary-button" onClick={onSubmit} disabled={loading || !cityIsValid}>
           {loading ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />}
-          生成轻命理画像
+          生成命理画像
         </button>
       </div>
     </div>
@@ -313,14 +322,14 @@ function BaziIntro({ profile, onStart }: { profile: BaziProfile; onStart: () => 
   return (
     <div className="content">
       <div className="ritual-copy">
-        <span>命理轻画像</span>
+        <span>命理画像</span>
         <h3>这不是结论，只是一面先照见惯性的镜子。</h3>
       </div>
 
       <div className="split-grid">
         <section className="panel-block">
           <div className="panel-block-header">
-            <h3>轻命理开场</h3>
+            <h3>命理开场</h3>
             <span className="badge">日主 {profile.dayMaster.stem}{profile.dayMaster.label}</span>
           </div>
           <div className="panel-body">
@@ -364,6 +373,123 @@ function BaziIntro({ profile, onStart }: { profile: BaziProfile; onStart: () => 
   );
 }
 
+function OdysseyLoading() {
+  return (
+    <div className="odyssey-overlay" role="status" aria-label="正在生成奥德赛计划">
+      <svg className="odyssey-scene" viewBox="0 0 320 210" width="320" height="210" aria-hidden="true">
+        <defs>
+          <linearGradient id="ribbonInk" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#2e2a24" stopOpacity="0.85" />
+            <stop offset="50%" stopColor="#a8813b" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#2e2a24" stopOpacity="0.85" />
+          </linearGradient>
+        </defs>
+        <path
+          className="odyssey-ribbon odyssey-ribbon-base"
+          d="M 58 104 C 58 62, 138 62, 160 102 C 182 142, 262 142, 262 100 C 262 58, 182 58, 160 98 C 138 138, 58 138, 58 104 Z"
+          fill="none"
+          stroke="url(#ribbonInk)"
+          strokeWidth="9"
+          strokeLinecap="round"
+          opacity="0.35"
+        />
+        <path
+          className="odyssey-ribbon odyssey-ribbon-flow"
+          d="M 58 104 C 58 62, 138 62, 160 102 C 182 142, 262 142, 262 100 C 262 58, 182 58, 160 98 C 138 138, 58 138, 58 104 Z"
+          fill="none"
+          stroke="url(#ribbonInk)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeDasharray="26 50"
+        />
+        <path
+          className="odyssey-wave"
+          d="M 34 172 C 64 164, 94 180, 124 172 C 154 164, 184 180, 214 172 C 244 164, 268 178, 286 172"
+          fill="none"
+          stroke="#a8813b"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          opacity="0.5"
+          strokeDasharray="10 14"
+        />
+        <g className="odyssey-boat-track">
+          <g className="odyssey-boat-rock">
+            <path d="M -16 0 L 16 0 L 8 9 L -8 9 Z" fill="#2e2a24" opacity="0.82" />
+            <path d="M 1 -17 L 12 -3 L 1 -3 Z" fill="#a8813b" opacity="0.9" />
+            <path d="M -2 -12 L -10 -3 L -2 -3 Z" fill="#2e2a24" opacity="0.55" />
+          </g>
+        </g>
+      </svg>
+      <p className="odyssey-loading-text">正沿时间之河，绘制你的三版五年奥德赛计划</p>
+      <p className="odyssey-loading-sub">路线越长，绘制越慢——大约需要一分钟，请稍候</p>
+    </div>
+  );
+}
+
+const TEN_GOD_MEANING: Record<TenGod, string> = {
+  比肩: "独立把事扛起来的自主性，也容易单打独斗",
+  劫财: "拉上同伴一起冲的行动力，节奏快、敢投入",
+  食神: "从容表达与创造的天赋——把想法慢慢做出来的能力",
+  伤官: "锋利的才华与表达欲，常有打破常规的洞察",
+  偏财: "抓住机会、灵活调动资源的手感",
+  正财: "踏实积累、把价值一步步兑现的耐性",
+  七杀: "高压环境里反而被激发的韧性，敢啃硬仗",
+  正官: "对规则、责任和标准的天然自觉",
+  偏印: "直觉式的学习力，擅长冷门领域和深度思考",
+  正印: "系统吸收知识的天赋，也常是被人信任的稳压器"
+};
+
+function BaziInsightPanel({ profile }: { profile: BaziProfile }) {
+  const counts: Partial<Record<TenGod, number>> = {};
+
+  if (profile.tenGods) {
+    for (const god of [profile.tenGods.year, profile.tenGods.month, profile.tenGods.hour]) {
+      counts[god] = (counts[god] ?? 0) + 1;
+    }
+  }
+  if (profile.hiddenStems) {
+    for (const stem of Object.values(profile.hiddenStems).flat()) {
+      counts[stem.tenGod] = (counts[stem.tenGod] ?? 0) + 1;
+    }
+  }
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]) as Array<[TenGod, number]>;
+  const currentLuck = profile.currentLuck;
+  const currentLuckTenGod = currentLuck
+    ? tenGodRelation(profile.dayMaster.stem, currentLuck.ganZhi[0] ?? "甲")
+    : undefined;
+
+  return (
+    <div className="bazi-insight">
+      <div className="bazi-insight-block">
+        <h4>十神解析 · 你的天赋点</h4>
+        {ranked.length ? (
+          ranked.slice(0, 3).map(([god, count]) => (
+            <p key={god}>
+              <strong>{god}×{count}</strong>——{TEN_GOD_MEANING[god]}。
+            </p>
+          ))
+        ) : (
+          <p>十神数据需要重新排盘后才会显示。</p>
+        )}
+      </div>
+      <div className="bazi-insight-block">
+        <h4>大运流年</h4>
+        {currentLuck && currentLuckTenGod ? (
+          <>
+            <p>
+              你现在正走 <strong>{currentLuck.ganZhi}</strong> 大运（{currentLuck.ageRange}，{currentLuck.yearRange}），大运天干是你的<strong>{currentLuckTenGod}</strong>——{TEN_GOD_MEANING[currentLuckTenGod]}。
+            </p>
+            <p className="bazi-insight-hint">这十年的主题是环境给你的底色，不是判决；它在下面的镜像信里只会作为参照出现。</p>
+          </>
+        ) : (
+          <p>当前大运信息暂缺。</p>
+        )}
+      </div>
+      <div className="empty-state">完成第 3 问后，这里会出现第一封命理镜像信。</div>
+    </div>
+  );
+}
+
 function QuestionPanel({
   profile,
   answers,
@@ -391,11 +517,21 @@ function QuestionPanel({
 }) {
   const question = redDotQuestions[currentIndex];
   const existing = answers.find((answer) => answer.questionId === question.id);
+  const previousConfirmed = question.id === 12
+    ? answers.find((answer) => answer.questionId === 11)?.confirmedRedDots ?? []
+    : [];
   const [draft, setDraft] = useState(existing?.text ?? "");
-  const [confirmedRedDots, setConfirmedRedDots] = useState<RedDotId[]>(existing?.confirmedRedDots ?? []);
+  const [confirmedRedDots, setConfirmedRedDots] = useState<RedDotId[]>(existing?.confirmedRedDots ?? previousConfirmed);
+  const [excludedRedDots, setExcludedRedDots] = useState<RedDotId[]>(existing?.excludedRedDots ?? []);
+  const [shortlist, setShortlist] = useState<ShortlistResponse | null>(null);
+  const [shortlistLoading, setShortlistLoading] = useState(false);
+  const [rankingPrompts, setRankingPrompts] = useState<RankingPromptsResponse | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(false);
   const progress = answers.length;
   const showRedDotModel = question.id >= 10;
-  const redDotCandidates = useMemo(() => {
+  const isExclusionStep = question.id === 10;
+  const isRankingStep = question.id === 12 && confirmedRedDots.length === 3;
+  const ruleCandidates = useMemo(() => {
     const ranked = scoreRedDots(answers)
       .filter((score) => score.score > 0)
       .slice(0, 5)
@@ -403,6 +539,85 @@ function QuestionPanel({
 
     return ranked.length >= 3 ? ranked : redDots.slice(0, 5);
   }, [answers]);
+  const shortlistItems = useMemo(() => {
+    const items = shortlist?.candidates ?? ruleCandidates.map((dot) => ({ id: dot.id, evidence: "" }));
+    const poolIds = new Set(items.map((item) => item.id));
+    const carried = confirmedRedDots
+      .filter((id) => !poolIds.has(id))
+      .map((id) => ({ id, evidence: "你上一次确认的选择，可直接保留或修改。" }));
+    return [...items, ...carried];
+  }, [shortlist, ruleCandidates, confirmedRedDots]);
+
+  const shortlistKeyRef = useRef("");
+  useEffect(() => {
+    if (!showRedDotModel) return;
+    const excluded = answers.find((answer) => answer.questionId === 10)?.excludedRedDots ?? [];
+    const key = `${excluded.join(",")}|${answers.length}`;
+    if (shortlistKeyRef.current === key) return;
+    shortlistKeyRef.current = key;
+    let canceled = false;
+    setShortlistLoading(true);
+    fetch("/api/diagnosis/shortlist", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        answers,
+        excluded,
+        profile
+      })
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as ShortlistResponse & { message?: string };
+        if (!response.ok) throw new Error(data.message ?? "候选预筛失败");
+        if (!canceled) setShortlist(data);
+      })
+      .catch(() => {
+        if (!canceled) setShortlist(null);
+      })
+      .finally(() => {
+        if (!canceled) setShortlistLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [showRedDotModel, answers]);
+
+  const rankingKeyRef = useRef("");
+  useEffect(() => {
+    if (!isRankingStep) return;
+    const key = confirmedRedDots.join(",");
+    if (rankingKeyRef.current === key) return;
+    rankingKeyRef.current = key;
+    let canceled = false;
+    setRankingLoading(true);
+    fetch("/api/diagnosis/ranking-prompts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        answers,
+        topDots: confirmedRedDots,
+        profile
+      })
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as RankingPromptsResponse & { message?: string };
+        if (!response.ok) throw new Error(data.message ?? "关键问题生成失败");
+        if (!canceled) setRankingPrompts(data);
+      })
+      .catch(() => {
+        if (!canceled) setRankingPrompts(null);
+      })
+      .finally(() => {
+        if (!canceled) setRankingLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [isRankingStep, confirmedRedDots, answers]);
 
   function toggleRedDot(redDotId: RedDotId) {
     setConfirmedRedDots((items) => {
@@ -410,6 +625,20 @@ function QuestionPanel({
       if (items.length >= 3) return [...items.slice(1), redDotId];
       return [...items, redDotId];
     });
+  }
+
+  function toggleExcluded(redDotId: RedDotId) {
+    setExcludedRedDots((items) => {
+      if (items.includes(redDotId)) return items.filter((item) => item !== redDotId);
+      if (items.length >= 4) return items;
+      return [...items, redDotId];
+    });
+  }
+
+  function updateMirrorNote(mirrorId: string, note: string) {
+    setReflections((items) =>
+      items.map((item) => (item.id === mirrorId ? { ...item, note } : item))
+    );
   }
 
   function getRank(redDotId: RedDotId) {
@@ -422,7 +651,8 @@ function QuestionPanel({
       questionId: question.id,
       text: draft,
       tags: inferEvidenceTagsFromText(draft, question.evidenceTags),
-      confirmedRedDots: showRedDotModel ? confirmedRedDots : undefined
+      confirmedRedDots: showRedDotModel && !isExclusionStep ? confirmedRedDots : undefined,
+      excludedRedDots: isExclusionStep ? excludedRedDots : undefined
     };
     let normalizedAnswer = nextAnswer;
     const mirrorId = `q${question.id}-${Date.now()}`;
@@ -452,6 +682,7 @@ function QuestionPanel({
           sessionId: sessionId || undefined,
           profile,
           answer: nextAnswer,
+          answers: nextAnswers,
           shouldReflect: false
         })
       });
@@ -493,6 +724,7 @@ function QuestionPanel({
               ? {
                   ...item,
                   text: reflectionData.reflection,
+                  keywords: reflectionData.keywords ?? [],
                   status: "done"
                 }
               : item));
@@ -530,9 +762,12 @@ function QuestionPanel({
 
     const nextIndex = currentIndex + 1;
     const nextExisting = nextAnswers.find((answer) => answer.questionId === redDotQuestions[nextIndex].id);
+    const carriedDots = nextExisting?.confirmedRedDots
+      ?? (redDotQuestions[nextIndex].id === 12 ? confirmedRedDots : []);
     setCurrentIndex(nextIndex);
     setDraft(nextExisting?.text ?? "");
-    setConfirmedRedDots(nextExisting?.confirmedRedDots ?? []);
+    setConfirmedRedDots(carriedDots);
+    setExcludedRedDots(nextExisting?.excludedRedDots ?? []);
   }
 
   function goPrevious() {
@@ -541,6 +776,7 @@ function QuestionPanel({
     setCurrentIndex(nextIndex);
     setDraft(nextExisting?.text ?? "");
     setConfirmedRedDots(nextExisting?.confirmedRedDots ?? []);
+    setExcludedRedDots(nextExisting?.excludedRedDots ?? []);
   }
 
   return (
@@ -576,35 +812,132 @@ function QuestionPanel({
 
             {showRedDotModel ? (
               <div className="model-explainer">
-                <h4>红九模型对照</h4>
-                <p>现在才进入类型解释：不是凭名字认领，而是从前面积累的证据里筛出候选。点击卡片会按选择顺序排成 Top 1 / Top 2 / Top 3；再次点击可移除。</p>
-                <div className="ranked-red-dot-grid">
-                  {redDotCandidates.map((dot) => (
-                    <button
-                      className={confirmedRedDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
-                      key={dot.id}
-                      onClick={() => toggleRedDot(dot.id)}
-                      type="button"
-                      title={dot.trait}
-                    >
-                      <span className="rank-mark">{getRank(dot.id) ? `Top ${getRank(dot.id)}` : "候选"}</span>
-                      <strong>{dot.name}</strong>
-                      <span>{dot.trait}</span>
-                      <em>{dot.motto}</em>
-                    </button>
-                  ))}
-                </div>
-                <div className="rank-summary">
-                  {[0, 1, 2].map((index) => {
-                    const selected = confirmedRedDots[index];
-                    return (
-                      <div className="rank-slot" key={index}>
-                        <span>Top {index + 1}</span>
-                        <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                {isExclusionStep ? (
+                  <>
+                    <h4>红点排除</h4>
+                    <p>九个红点里，把不符合你的先划掉：至少划掉 1 个，最多划掉 4 个（至少剩 5 个）。与此同时，系统正在结合你前面的全部回答做模型预筛，下一问会给你 5 个候选。</p>
+                    <div className="ranked-red-dot-grid">
+                      {redDots.map((dot) => (
+                        <button
+                          className={excludedRedDots.includes(dot.id) ? "red-dot-option is-excluded" : "red-dot-option"}
+                          key={dot.id}
+                          onClick={() => toggleExcluded(dot.id)}
+                          type="button"
+                          title={dot.trait}
+                        >
+                          <span className="rank-mark">{excludedRedDots.includes(dot.id) ? "已划掉" : "候选"}</span>
+                          <strong>{dot.name}</strong>
+                          <span>{dot.trait}</span>
+                          <em>{dot.motto}</em>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="rank-summary">
+                      <div className="rank-slot">
+                        <span>已划掉</span>
+                        <strong>{excludedRedDots.length} / 4</strong>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="rank-slot">
+                        <span>剩余候选</span>
+                        <strong>{9 - excludedRedDots.length} 个</strong>
+                      </div>
+                    </div>
+                  </>
+                ) : isRankingStep ? (
+                  <>
+                    <h4>Top 3 强制排序</h4>
+                    {rankingLoading ? (
+                      <p className="shortlist-status">正在结合你的全部回答，为三个红点提炼最关键的抉择问题，请稍候…</p>
+                    ) : (
+                      <p>这是你确认的三个红点。每个都附有一段结合你全部回答的描述，和一道最关键的抉择问题——放在这里，供你判断。凭读完问题后的直觉，在下方写下你的最终倾向即可。</p>
+                    )}
+                    <div className="ranking-prompt-list">
+                      {confirmedRedDots.map((dotId) => {
+                        const dot = redDotById[dotId];
+                        const prompt = rankingPrompts?.prompts.find((item) => item.id === dotId);
+                        if (rankingLoading) {
+                          return (
+                            <div className="red-dot-option ranking-prompt-card is-skeleton" key={dotId}>
+                              <span className="rank-mark">Top {getRank(dotId)}</span>
+                              <strong>{dot.name}</strong>
+                              <span className="skeleton-line" style={{ width: "92%" }} />
+                              <span className="skeleton-line" style={{ width: "85%" }} />
+                              <span className="skeleton-line skeleton-line-question" style={{ width: "70%" }} />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="red-dot-option ranking-prompt-card" key={dotId}>
+                            <span className="rank-mark">Top {getRank(dotId)}</span>
+                            <strong>{dot.name}</strong>
+                            {prompt ? (
+                              <>
+                                <span className="ranking-description">{prompt.description}</span>
+                                <em className="ranking-question">{prompt.question}</em>
+                              </>
+                            ) : (
+                              <span>{dot.trait}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="rank-summary">
+                      {[0, 1, 2].map((index) => {
+                        const selected = confirmedRedDots[index];
+                        return (
+                          <div className="rank-slot" key={index}>
+                            <span>Top {index + 1}</span>
+                            <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h4>候选 5 选 3</h4>
+                    {shortlistLoading ? (
+                      <p className="shortlist-status">正在结合你的全部回答做模型分析，请稍候…</p>
+                    ) : (
+                      <p>这是模型基于你所有回答给出的 5 个候选。点击卡片会按选择顺序排成 Top 1 / Top 2 / Top 3；再次点击可移除。</p>
+                    )}
+                    {!shortlistLoading ? (
+                      <>
+                        <div className="ranked-red-dot-grid">
+                          {shortlistItems.map((candidate) => {
+                            const dot = redDotById[candidate.id];
+                            return (
+                              <button
+                                className={confirmedRedDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
+                                key={dot.id}
+                                onClick={() => toggleRedDot(dot.id)}
+                                type="button"
+                                title={dot.trait}
+                              >
+                                <span className="rank-mark">{getRank(dot.id) ? `Top ${getRank(dot.id)}` : "候选"}</span>
+                                <strong>{dot.name}</strong>
+                                <span>{dot.trait}</span>
+                                <em>{candidate.evidence || dot.motto}</em>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="rank-summary">
+                          {[0, 1, 2].map((index) => {
+                            const selected = confirmedRedDots[index];
+                            return (
+                              <div className="rank-slot" key={index}>
+                                <span>Top {index + 1}</span>
+                                <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : null}
 
@@ -613,7 +946,11 @@ function QuestionPanel({
                 <ArrowLeft size={18} />
                 上一问
               </button>
-              <button className="primary-button" onClick={saveAnswer} disabled={!draft.trim() || (showRedDotModel && confirmedRedDots.length === 0)}>
+              <button
+                className="primary-button"
+                onClick={saveAnswer}
+                disabled={!draft.trim() || (showRedDotModel && (isExclusionStep ? excludedRedDots.length < 1 : isRankingStep ? confirmedRedDots.length < 3 : shortlistLoading || confirmedRedDots.length === 0))}
+              >
                 {question.id === 12 ? "生成诊断草案" : "保存并继续"}
                 <ArrowRight size={18} />
               </button>
@@ -629,13 +966,14 @@ function QuestionPanel({
           <div className="panel-body">
             {reflections.length ? (
               reflections.map((reflection) => (
-                <div className={reflection.status === "loading" ? "mirror-card is-loading" : "mirror-card"} key={reflection.id}>
-                  <strong>Q{reflection.questionId} · {reflection.theme}</strong>
-                  <p>{reflection.text}</p>
-                </div>
+                <MirrorCard
+                  key={reflection.id}
+                  reflection={reflection}
+                  onUpdateNote={updateMirrorNote}
+                />
               ))
             ) : (
-              <div className="empty-state">完成第 3、6、9、12 问后，这里会结合命理 Skill 和这一轮回答生成镜像回应。</div>
+              <BaziInsightPanel profile={profile} />
             )}
           </div>
         </section>
@@ -644,9 +982,63 @@ function QuestionPanel({
   );
 }
 
+function MirrorCard({
+  reflection,
+  onUpdateNote
+}: {
+  reflection: MirrorEntry;
+  onUpdateNote: (mirrorId: string, note: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(reflection.note ?? "");
+  const loading = reflection.status === "loading";
+  const tags = loading
+    ? []
+    : (reflection.keywords?.length ? reflection.keywords : ["本轮复盘"]);
+
+  return (
+    <article className={loading ? "mirror-card is-loading" : "mirror-card"} data-note={noteDraft.trim() ? "yes" : "no"}>
+      <button className="mirror-envelope" onClick={() => setExpanded((value) => !value)} type="button">
+        <span className="mirror-tags">
+          {loading
+            ? <span className="mirror-tags-loading">正在提炼关键词……</span>
+            : tags.map((tag) => <span className="mirror-tag" key={tag}>{tag}</span>)}
+        </span>
+        <span className="mirror-meta">
+          {noteDraft.trim() ? <Bookmark className="mirror-bookmark" size={14} /> : null}
+          <ChevronDown className={expanded ? "mirror-chevron is-open" : "mirror-chevron"} size={16} />
+        </span>
+      </button>
+
+      <div className={expanded ? "mirror-fold is-open" : "mirror-fold"}>
+        <div className="mirror-fold-inner">
+          <p className="mirror-letter">{reflection.text}</p>
+
+          <div className="mirror-margin-note">
+            <div className="mirror-margin-note-header">
+              <PenLine size={13} />
+              <span>随手批注</span>
+            </div>
+            <textarea
+              className="mirror-note-input"
+              value={noteDraft}
+              placeholder="读完这封信，有什么想随手记下的？留白也没关系。"
+              onChange={(event) => setNoteDraft(event.target.value)}
+              onBlur={() => onUpdateNote(reflection.id, noteDraft.trim())}
+            />
+            <span className="mirror-note-hint">失焦即存 · 会随报告一起保存</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ResultPanel({
   answers,
-  setAnswers,
+  profile,
+  reflections,
+  onUpdateNote,
   onGeneratePlans,
   direction,
   setDirection,
@@ -656,7 +1048,9 @@ function ResultPanel({
   setError
 }: {
   answers: ExplorationAnswer[];
-  setAnswers: (answers: ExplorationAnswer[]) => void;
+  profile: BaziProfile | null;
+  reflections: MirrorEntry[];
+  onUpdateNote: (mirrorId: string, note: string) => void;
   onGeneratePlans: (topDots: RedDotId[]) => void;
   direction: string;
   setDirection: (value: string) => void;
@@ -666,25 +1060,35 @@ function ResultPanel({
   setError: (value: string) => void;
 }) {
   const localScores = useMemo(() => scoreRedDots(answers), [answers]);
+  const positiveLocalScores = localScores.filter((score) => score.score > 0);
   const scores = diagnosisDraft?.scores ?? localScores;
-  const diagnosis = diagnosisDraft?.analysis ?? analyzeDiagnosis(scores);
-  const positiveScores = scores.filter((score) => score.score > 0);
-  const topScores = diagnosisDraft?.topScores ?? (positiveScores.length >= 3 ? positiveScores.slice(0, 3) : scores.slice(0, 3));
-  const consensusSeedKey = positiveScores.slice(0, 3).map((score) => score.id).join("|");
-  const followUpCount = answers.filter((answer) => answer.questionId >= 13).length;
-  const canAskFollowUp = diagnosis.status === "needs_follow_up" && followUpCount < MAX_FOLLOW_UP_QUESTIONS;
-  const isLowConfidenceDraft = diagnosis.status === "needs_follow_up" && !canAskFollowUp;
-  const canEditConsensus = diagnosis.status === "confident" || isLowConfidenceDraft;
+  const topScores = diagnosisDraft?.topScores ?? (positiveLocalScores.length >= 3 ? positiveLocalScores.slice(0, 3) : localScores.slice(0, 3));
   const recommendedDots = useMemo(() => {
     const ranked = scores.filter((score) => score.score > 0).slice(0, 5).map((score) => redDotById[score.id]);
     return ranked.length >= 3 ? ranked : redDots.slice(0, 5);
   }, [scores]);
-  const activeFollowUp = canAskFollowUp ? diagnosis.followUpQuestions[0] : undefined;
   const [showAllDots, setShowAllDots] = useState(false);
-  const [consensusDots, setConsensusDots] = useState<RedDotId[]>(positiveScores.slice(0, 3).map((score) => score.id));
-  const [followUpDraft, setFollowUpDraft] = useState("");
-  const [followUpConfirmedDots, setFollowUpConfirmedDots] = useState<RedDotId[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(true);
   const selectableDots = showAllDots ? redDots : recommendedDots;
+
+  const finalRanking = useMemo(() => {
+    const lastRanked = [...answers].reverse().find((answer) => (answer.confirmedRedDots?.length ?? 0) === 3);
+    return lastRanked?.confirmedRedDots as RedDotId[] | undefined;
+  }, [answers]);
+
+  const [consensusDots, setConsensusDots] = useState<RedDotId[]>([]);
+  const consensusInitialized = useRef(false);
+
+  useEffect(() => {
+    if (consensusInitialized.current) return;
+    const seed = finalRanking ?? (diagnosisDraft && diagnosisDraft.topScores.length === 3
+      ? diagnosisDraft.topScores.map((score) => score.id)
+      : undefined);
+    if (seed && seed.length === 3) {
+      setConsensusDots(seed);
+      consensusInitialized.current = true;
+    }
+  }, [finalRanking, diagnosisDraft]);
 
   useEffect(() => {
     let canceled = false;
@@ -700,13 +1104,17 @@ function ResultPanel({
           },
           body: JSON.stringify({
             sessionId: sessionId || undefined,
-            answers
+            answers,
+            profile: profile ?? undefined,
+            reflections: reflections
+              .filter((mirror) => mirror.status !== "loading")
+              .map(({ id, keywords, text, note }) => ({ id, keywords, text, note }))
           })
         });
         const data = (await response.json()) as DiagnosisDraftResponse & { message?: string };
 
         if (!response.ok) {
-          throw new Error(data.message ?? "生成诊断草案失败");
+          throw new Error(data.message ?? "生成诊断报告失败");
         }
 
         if (!canceled) {
@@ -716,7 +1124,7 @@ function ResultPanel({
       } catch (requestError) {
         if (!canceled) {
           setDiagnosisDraft(null);
-          setError(requestError instanceof Error ? requestError.message : "生成诊断草案失败，已展示本地规则草案。");
+          setError(requestError instanceof Error ? requestError.message : "生成诊断报告失败，已展示本地规则草案。");
         }
       }
     }
@@ -726,16 +1134,9 @@ function ResultPanel({
     return () => {
       canceled = true;
     };
-  }, [answers, sessionId, setDiagnosisDraft, setError]);
-
-  useEffect(() => {
-    setConsensusDots(consensusSeedKey ? (consensusSeedKey.split("|") as RedDotId[]) : []);
-  }, [consensusSeedKey]);
-
-  useEffect(() => {
-    setFollowUpDraft("");
-    setFollowUpConfirmedDots([]);
-  }, [activeFollowUp?.id]);
+    // 诊断只在进入结果页时请求一次，回看批注的变化不应触发重新生成
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleConsensusDot(redDotId: RedDotId) {
     setConsensusDots((items) => {
@@ -750,233 +1151,251 @@ function ResultPanel({
     return index >= 0 ? index + 1 : undefined;
   }
 
-  function toggleFollowUpRedDot(redDotId: RedDotId) {
-    setFollowUpConfirmedDots((items) => (items.includes(redDotId) ? [] : [redDotId]));
-  }
-
-  async function saveFollowUpAnswer() {
-    if (!activeFollowUp) return;
-
-    const questionId = Math.max(13, ...answers.map((answer) => answer.questionId + 1));
-    const followUpAnswer: ExplorationAnswer = {
-      questionId,
-      text: followUpDraft,
-      tags: inferEvidenceTagsFromText(followUpDraft, activeFollowUp.evidenceTags),
-      confirmedRedDots: followUpConfirmedDots
-    };
-    const fallbackAnswers = [
-      ...answers,
-      followUpAnswer
-    ].sort((a, b) => a.questionId - b.questionId);
-
-    try {
-      const response = await fetch("/api/diagnosis/follow-up", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          sessionId: sessionId || undefined,
-          answers,
-          answer: followUpAnswer
-        })
-      });
-      const data = (await response.json()) as AnswerResponse & DiagnosisDraftResponse & { message?: string };
-
-      if (!response.ok) {
-        throw new Error(data.message ?? "保存补问失败");
-      }
-
-      setAnswers(data.answers.length ? data.answers : fallbackAnswers);
-      setDiagnosisDraft({
-        scores: data.scores,
-        analysis: data.analysis,
-        topScores: data.topScores,
-        source: data.source
-      });
-      setError("");
-    } catch (requestError) {
-      setAnswers(fallbackAnswers);
-      setDiagnosisDraft(null);
-      setError(requestError instanceof Error ? requestError.message : "保存补问失败，已先保留在当前页面。");
-    }
-  }
+  const isAnalyzing = !diagnosisDraft;
 
   return (
     <div className="content">
       <section className="panel-block manuscript-panel">
         <div className="panel-block-header">
-          <h3>诊断草案</h3>
-          <span className="badge">专业分析 + 用户确认</span>
+          <h3>诊断报告</h3>
+          <span className="badge">十二问证据 + 命理镜面</span>
         </div>
         <div className="panel-body">
-          <div className="notice" style={{ marginTop: 0 }}>
-            <ScrollText size={18} />
-            <span>这是基于前 9 问生活证据、第 10-12 问模型确认和文本关键词生成的草案。请把它当作可讨论的假设，而不是最终判决；你可以在下方修订 Top 3，形成共同共识后再生成奥德赛计划。</span>
+          {isAnalyzing ? (
+            <>
+              <div className="notice is-warning" style={{ marginTop: 0 }}>
+                <ScrollText size={18} />
+                <span>模型正在结合你的十二问回答和命理镜像信撰写诊断报告，约需 30-60 秒。等待期间，你可以自由回看下方的十二张问答卡片和镜像信。</span>
+              </div>
+              <div className="report-skeleton">
+                <span className="skeleton-line" style={{ width: "88%" }} />
+                <span className="skeleton-line" style={{ width: "94%" }} />
+                <span className="skeleton-line" style={{ width: "76%" }} />
+                <span className="skeleton-line" style={{ width: "58%" }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="notice" style={{ marginTop: 0 }}>
+                <ScrollText size={18} />
+                <span>这份报告来自你的十二问回答与命理镜面，请把它当作可讨论的假设，而不是最终判决；你可以在下方微调 Top 3，确认后再生成奥德赛计划。</span>
+              </div>
+
+              <div className="score-grid">
+                {topScores.map((score, index) => {
+                  const dot = redDotById[score.id];
+                  const max = Math.max(topScores[0]?.score ?? 1, 1);
+
+                  return (
+                    <article className="red-dot-card" key={score.id}>
+                      <span className="badge">Top {index + 1}</span>
+                      <h3>{dot.name}</h3>
+                      <p>{dot.trait}</p>
+                      <div className="score-bar">
+                        <div className="score-fill" style={{ width: `${Math.max(12, (score.score / max) * 100)}%` }} />
+                      </div>
+                      <div className="timeline">
+                        {score.evidence.length ? score.evidence.map((item) => <p key={item}>{item}</p>) : <p>来自你的证据线索与文本回答。</p>}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {diagnosisDraft.source.includes("fallback") ? (
+                <div className="fallback-note">当前展示的是本地规则草案（模型暂时不可用）。重新进入本页或稍后刷新即可重新生成模型报告。</div>
+              ) : null}
+
+              <div className="model-explainer" style={{ marginTop: 18 }}>
+                <h4>为什么是这三个</h4>
+                <div className="reason-list">
+                  {diagnosisDraft.top3Reasons.map((reason) => (
+                    <div className="reason-item" key={reason}>{reason}</div>
+                  ))}
+                </div>
+              </div>
+
+              <article className="report-letter">
+                <h4>结合命理的过往解读</h4>
+                <p className="mirror-letter">{diagnosisDraft.lifeInterpretation}</p>
+              </article>
+
+              <article className="report-letter">
+                <h4>现在的你，是什么样的人</h4>
+                <p className="mirror-letter">{diagnosisDraft.personPortrait}</p>
+              </article>
+            </>
+          )}
+
+          <div className="model-explainer" style={{ marginTop: 18 }}>
+            <h4>确认你的 Top 3</h4>
+            <p>
+              {finalRanking
+                ? "已默认继承你在第 11-12 问确认的排序，可以直接确认，也可以微调。这里的选择会作为奥德赛计划的前提。"
+                : "如果草案不符合你的真实感受，可以从候选里重新选择最终 Top 3。这里的选择会作为奥德赛计划的前提。"}
+            </p>
+            <div className="ranked-red-dot-grid">
+              {selectableDots.map((dot) => (
+                <button
+                  className={consensusDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
+                  key={dot.id}
+                  onClick={() => toggleConsensusDot(dot.id)}
+                  type="button"
+                  title={dot.trait}
+                >
+                  <span className="rank-mark">{getConsensusRank(dot.id) ? `Top ${getConsensusRank(dot.id)}` : "候选"}</span>
+                  <strong>{dot.name}</strong>
+                  <span>{dot.trait}</span>
+                  <em>{dot.motto}</em>
+                </button>
+              ))}
+            </div>
+            <div className="rank-summary">
+              {[0, 1, 2].map((index) => {
+                const selected = consensusDots[index];
+                return (
+                  <div className="rank-slot" key={index}>
+                    <span>Top {index + 1}</span>
+                    <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="button-row" style={{ marginTop: 12 }}>
+              <button className="ghost-button" type="button" onClick={() => setShowAllDots((value) => !value)}>
+                {showAllDots ? "收起全部类型" : "查看全部 9 类"}
+              </button>
+            </div>
           </div>
 
-          {diagnosis.status === "needs_follow_up" ? (
-            <div className="diagnosis-gate">
-              <div className="notice is-warning" style={{ marginTop: 0 }}>
-                <MessageSquareText size={18} />
-                <span>
-                  {canAskFollowUp
-                    ? `不确定，需要补问。当前是第 ${followUpCount + 1} / ${MAX_FOLLOW_UP_QUESTIONS} 题；现在不会强行给出最终 Top 3，也不会直接生成奥德赛计划。`
-                    : "已经完成 2 题补问，系统仍保留不确定性。下面进入低置信诊断草案，请由用户修订并形成共识后再继续。"}
-                </span>
-              </div>
+          <div className="field" style={{ marginTop: 18 }}>
+            <label>你想探索的职业或人生方向</label>
+            <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="例如：AI 产品经理、教育创业、内容创作、金融科技..." />
+          </div>
 
-              <div className="reason-list">
-                {diagnosis.reasons.map((reason) => (
-                  <div className="reason-item" key={reason}>{reason}</div>
-                ))}
-              </div>
+          <div className="button-row">
+            <button className="primary-button" onClick={() => onGeneratePlans(consensusDots)} disabled={consensusDots.length !== 3 || isAnalyzing}>
+              {isAnalyzing ? "诊断生成中，请稍候" : "确认共识，生成三版奥德赛计划"}
+              <Compass size={18} />
+            </button>
+          </div>
 
-              {activeFollowUp ? (
-                <div className="model-explainer" style={{ marginTop: 18 }}>
-                  <h4>补问：用真实取舍校准诊断</h4>
-                  <p>{activeFollowUp.prompt}</p>
-
-                  <div className="candidate-strip">
-                    {activeFollowUp.candidates.map((candidate) => {
-                      const dot = redDotById[candidate];
-
+          <div className="review-section">
+            <button className="review-toggle" onClick={() => setReviewOpen((value) => !value)} type="button">
+              <ChevronDown className={reviewOpen ? "mirror-chevron is-open" : "mirror-chevron"} size={16} />
+              <span>十二问回看与命理镜像</span>
+              <em>{reviewOpen ? "收起" : "展开"}</em>
+            </button>
+            {reviewOpen ? (
+              <>
+                <div className="review-grid">
+                  {answers
+                    .filter((answer) => answer.questionId <= redDotQuestions.length)
+                    .map((answer) => {
+                      const question = redDotQuestions.find((item) => item.id === answer.questionId);
                       return (
-                        <div className="candidate-pill" key={candidate} title={dot.trait}>
-                          <strong>{dot.shortName}</strong>
-                          <span>{dot.quadrant}</span>
+                        <div className="review-card" key={answer.questionId}>
+                          <span className="review-q">Q{answer.questionId} · {question?.theme}</span>
+                          <p className="review-question">{question?.prompt}</p>
+                          <p className="review-answer">{answer.text}</p>
+                          {answer.confirmedRedDots?.length ? (
+                            <span className="review-tags">
+                              {answer.confirmedRedDots.map((id) => redDotById[id].shortName).join(" · ")}
+                            </span>
+                          ) : null}
                         </div>
                       );
                     })}
-                  </div>
-
-                  <div className="field" style={{ marginTop: 14 }}>
-                    <label>补充回答</label>
-                    <textarea
-                      className="answer-box"
-                      value={followUpDraft}
-                      onChange={(event) => setFollowUpDraft(event.target.value)}
-                      placeholder="写一个真实发生的例子：当时有哪些选项、你实际选择了什么、付出了什么代价、现在回看是否仍然认可。"
-                    />
-                  </div>
-
-                  <p className="choice-caption">如果必须判断，这个例子更支持哪一个候选？</p>
-                  <div className="choice-grid">
-                    {activeFollowUp.candidates.map((candidate) => {
-                      const dot = redDotById[candidate];
-
-                      return (
-                        <button
-                          className={followUpConfirmedDots.includes(candidate) ? "choice-chip is-selected" : "choice-chip"}
-                          key={candidate}
-                          onClick={() => toggleFollowUpRedDot(candidate)}
-                          type="button"
-                          title={dot.trait}
-                        >
-                          {dot.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="button-row">
-                    <button
-                      className="primary-button"
-                      onClick={saveFollowUpAnswer}
-                      disabled={!followUpDraft.trim() || followUpConfirmedDots.length === 0}
-                    >
-                      保存补问并重新诊断
-                      <ArrowRight size={18} />
-                    </button>
-                    <button className="ghost-button" type="button" disabled>
-                      共识未形成，暂不生成计划
-                    </button>
-                  </div>
                 </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="score-grid">
-            {topScores.map((score, index) => {
-              const dot = redDotById[score.id];
-              const max = Math.max(topScores[0]?.score ?? 1, 1);
-
-              return (
-                <article className="red-dot-card" key={score.id}>
-                  <span className="badge">Top {index + 1}</span>
-                  <h3>{dot.name}</h3>
-                  <p>{dot.trait}</p>
-                  <div className="score-bar">
-                    <div className="score-fill" style={{ width: `${Math.max(12, (score.score / max) * 100)}%` }} />
+                {reflections.length ? (
+                  <div className="review-mirrors">
+                    <h4>命理镜像</h4>
+                    {reflections.map((mirror) => (
+                      <MirrorCard key={mirror.id} reflection={mirror} onUpdateNote={onUpdateNote} />
+                    ))}
                   </div>
-                  <div className="timeline">
-                    {score.evidence.length ? score.evidence.map((item) => <p key={item}>{item}</p>) : <p>来自你的证据线索与文本回答。</p>}
-                  </div>
-                </article>
-              );
-            })}
+                ) : null}
+              </>
+            ) : null}
           </div>
-
-          {canEditConsensus ? (
-            <>
-              <div className="model-explainer" style={{ marginTop: 18 }}>
-                <h4>{isLowConfidenceDraft ? "低置信修订窗口：人工确认共同结论" : "修订窗口：确认共同结论"}</h4>
-                <p>
-                  {isLowConfidenceDraft
-                    ? "系统已经补问两轮但证据仍未完全收敛。此时不再继续追问，请把推荐候选当作低置信草案，由你重新选择最终 Top 3；这个人工确认会作为后续奥德赛计划的前提。"
-                    : "如果草案不符合你的真实感受，可以先从推荐候选里重新选择最终 Top 3。这里的选择会作为后续奥德赛计划的前提。"}
-                </p>
-                <div className="ranked-red-dot-grid">
-                  {selectableDots.map((dot) => (
-                    <button
-                      className={consensusDots.includes(dot.id) ? "red-dot-option is-selected" : "red-dot-option"}
-                      key={dot.id}
-                      onClick={() => toggleConsensusDot(dot.id)}
-                      type="button"
-                      title={dot.trait}
-                    >
-                      <span className="rank-mark">{getConsensusRank(dot.id) ? `Top ${getConsensusRank(dot.id)}` : "候选"}</span>
-                      <strong>{dot.name}</strong>
-                      <span>{dot.trait}</span>
-                      <em>{dot.motto}</em>
-                    </button>
-                  ))}
-                </div>
-                <div className="rank-summary">
-                  {[0, 1, 2].map((index) => {
-                    const selected = consensusDots[index];
-                    return (
-                      <div className="rank-slot" key={index}>
-                        <span>Top {index + 1}</span>
-                        <strong>{selected ? redDotById[selected].name : "待选择"}</strong>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="button-row" style={{ marginTop: 12 }}>
-                  <button className="ghost-button" type="button" onClick={() => setShowAllDots((value) => !value)}>
-                    {showAllDots ? "收起全部类型" : "查看全部 9 类"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="field" style={{ marginTop: 18 }}>
-                <label>你想探索的职业或人生方向</label>
-                <input value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="例如：AI 产品经理、教育创业、内容创作、金融科技..." />
-              </div>
-
-              <div className="button-row">
-                <button className="primary-button" onClick={() => onGeneratePlans(consensusDots)} disabled={consensusDots.length !== 3}>
-                  确认共识，生成三版奥德赛计划
-                  <Compass size={18} />
-                </button>
-              </div>
-            </>
-          ) : null}
         </div>
       </section>
     </div>
+  );
+}
+
+const PLAN_KIND_ORDER: OdysseyPlan["kind"][] = ["current", "alternate", "ideal"];
+
+const planKindMeta: Record<OdysseyPlan["kind"], { label: string; tag: string }> = {
+  current: { label: "计划一 · 现有轨迹优化版", tag: "CURRENT" },
+  alternate: { label: "计划二 · 备选转向版", tag: "ALTERNATE" },
+  ideal: { label: "计划三 · 理想版", tag: "IDEAL" }
+};
+
+function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
+  return (
+    <article className="plan-card is-skeleton" key={`skeleton-${kind}`}>
+      <div className="plan-head">
+        <div>
+          <span className="plan-kind-tag">{planKindMeta[kind].tag}</span>
+          <div className="skeleton-line skeleton-plan-title" />
+          <div className="skeleton-line skeleton-plan-thesis" />
+        </div>
+        <div className="dashboard-mini">
+          {[0, 1, 2, 3].map((i) => (
+            <div className="dash-item" key={i}>
+              <div className="skeleton-line skeleton-dash" />
+              <span>{["资源", "喜爱", "自信", "一致"][i]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="plan-body">
+        <div>
+          <h4>五年时间线</h4>
+          <ul className="year-list">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <li className="year-item" key={i}>
+                <div className="skeleton-line skeleton-year" />
+                <div>
+                  <div className="skeleton-line skeleton-line-short" />
+                  <div className="skeleton-line skeleton-line-long" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="card-stack">
+          <div className="path-card">
+            <h4>风险排查</h4>
+            {[0, 1, 2].map((i) => (
+              <div className="skeleton-line skeleton-line-mid" key={i} />
+            ))}
+          </div>
+          <div className="path-card">
+            <h4>原型实验</h4>
+            {[0, 1].map((i) => (
+              <div className="skeleton-line skeleton-line-mid" key={i} />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="plan-body" style={{ paddingTop: 0 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <h4>第一年路径卡</h4>
+          <div className="card-stack">
+            {[0, 1, 2].map((i) => (
+              <div className="path-card" key={i}>
+                <div className="skeleton-line skeleton-line-short" />
+                {[0, 1].map((j) => (
+                  <div className="skeleton-line skeleton-line-mid" key={j} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -984,10 +1403,18 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
   return (
     <div className="content">
       <div className="plan-grid">
-        {plans.map((plan) => (
-          <article className="plan-card" key={plan.kind}>
+        {PLAN_KIND_ORDER.map((kind) => {
+          const plan = plans.find((item) => item.kind === kind);
+
+          if (!plan) {
+            return <PlanCardSkeleton key={`skeleton-${kind}`} kind={kind} />;
+          }
+
+          return (
+          <article className="plan-card" key={kind}>
             <div className="plan-head">
               <div>
+                <span className="plan-kind-tag">{planKindMeta[kind].tag}</span>
                 <h3>{plan.title}</h3>
                 <p>{plan.thesis}</p>
               </div>
@@ -1052,7 +1479,7 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
                 <div className="card-stack">
                   {plan.firstYearCards.map((card) => (
                     <div className="path-card" key={card.title}>
-                      <h4>{card.type} · {card.title}</h4>
+                      <h4>{card.type}卡 · {card.category} · {card.title}</h4>
                       <ul>
                         {card.actions.map((action) => (
                           <li key={action}>{action}</li>
@@ -1064,7 +1491,8 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
               </div>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1130,32 +1558,176 @@ export default function Home() {
     }
   }
 
-  function resetAll() {
-    setProfile(null);
-    setStage("birth");
-    setAnswers([]);
-    setCurrentIndex(0);
-    setReflections([]);
-    setSessionId("");
-    setDiagnosisDraft(null);
-    setDirection("");
-    setPlans([]);
-    setError("");
+  function updateReflectionNote(mirrorId: string, note: string) {
+    setReflections((items) =>
+      items.map((item) => (item.id === mirrorId ? { ...item, note } : item))
+    );
   }
 
-  function exportJson() {
-    const payload = JSON.stringify({ sessionId, birthForm, profile, answers, reflections, direction, plans }, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
+  function escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function buildExportHtml(): string {
+    const section = (title: string, body: string) =>
+      `<section><h2>${escapeHtml(title)}</h2>${body}</section>`;
+
+    const baziSection = profile
+      ? section(
+          "命理画像",
+          `<div class="pillars">
+            ${(["year", "month", "day", "hour"] as const)
+              .map((key) => {
+                const labelMap = { year: "年柱", month: "月柱", day: "日柱", hour: "时柱" };
+                const tenGod = key === "day" ? "日主" : profile?.tenGods?.[key] ?? "";
+                return `<div class="pillar"><strong>${escapeHtml(profile.pillars[key])}</strong><span>${labelMap[key]}</span>${tenGod ? `<em>${escapeHtml(tenGod)}</em>` : ""}</div>`;
+              })
+              .join("")}
+          </div>
+          <p class="muted">日主 ${escapeHtml(profile.dayMaster.stem)}${escapeHtml(profile.dayMaster.label)} · ${escapeHtml(profile.dayMaster.cue)}</p>`
+        )
+      : "";
+
+    const diagnosisSection = diagnosisDraft
+      ? section(
+          "诊断报告",
+          `<h3>现在的你是什么人</h3><p>${escapeHtml(diagnosisDraft.personPortrait)}</p>
+           <h3>结合命理的过往解读</h3><p>${escapeHtml(diagnosisDraft.lifeInterpretation)}</p>
+           <h3>Top 3 红点与原因</h3><ul>${diagnosisDraft.top3Reasons
+             .map((reason) => `<li>${escapeHtml(reason)}</li>`)
+             .join("")}</ul>`
+        )
+      : "";
+
+    const mirrorSection = reflections.length
+      ? section(
+          "命理镜像信笺",
+          reflections
+            .map(
+              (mirror) => `<div class="mirror">
+                ${mirror.keywords?.length ? `<p class="keywords">${mirror.keywords.map((k) => `<span>${escapeHtml(k)}</span>`).join("")}</p>` : ""}
+                <p class="mirror-text">${escapeHtml(mirror.text)}</p>
+                ${mirror.note ? `<p class="note">批注：${escapeHtml(mirror.note)}</p>` : ""}
+              </div>`
+            )
+            .join("")
+        )
+      : "";
+
+    const answersSection = answers.length
+      ? section(
+          "十二问回答",
+          answers
+            .map((answer) => {
+              const question = redDotQuestions.find((item) => item.id === answer.questionId);
+              return `<div class="qa"><p class="q">${answer.questionId}. ${escapeHtml(question?.prompt ?? "")}</p><p class="a">${escapeHtml(answer.text)}</p></div>`;
+            })
+            .join("")
+        )
+      : "";
+
+    const plansSection = plans.length
+      ? section(
+          "三版奥德赛计划",
+          PLAN_KIND_ORDER.map((kind) => {
+            const plan = plans.find((item) => item.kind === kind);
+            if (!plan) return "";
+            return `<div class="plan">
+              <p class="plan-kind">${planKindMeta[kind].label}</p>
+              <h3>${escapeHtml(plan.title)}</h3>
+              <p class="thesis">${escapeHtml(plan.thesis)}</p>
+              <div class="dash">${([
+                ["资源", plan.dashboard.resources],
+                ["喜爱", plan.dashboard.love],
+                ["自信", plan.dashboard.confidence],
+                ["一致", plan.dashboard.coherence]
+              ] as const)
+                .map(([label, value]) => `<div class="dash-item"><strong>${value}</strong><span>${label}</span></div>`)
+                .join("")}</div>
+              <h4>五年时间线</h4>
+              <ul>${plan.timeline.map((item) => `<li><strong>${escapeHtml(item.year)} ${escapeHtml(item.theme)}</strong> — ${escapeHtml(item.focus)}</li>`).join("")}</ul>
+              <h4>风险排查</h4><ul>${plan.risks.map((risk) => `<li>${escapeHtml(risk)}</li>`).join("")}</ul>
+              <h4>原型实验</h4><ul>${plan.prototypes.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+              <h4>第一年路径卡</h4>
+              ${plan.firstYearCards
+                .map(
+                  (card) => `<div class="path-card"><p class="card-title">${escapeHtml(card.type)}卡 · ${escapeHtml(card.category)} · ${escapeHtml(card.title)}</p><ul>${card.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ul></div>`
+                )
+                .join("")}
+            </div>`;
+          }).join("")
+        )
+      : "";
+
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>人生罗盘 · 奥德赛计划报告</title>
+<style>
+  body { margin: 0; padding: 48px 24px; background: #f6f2ea; color: #2c2a26; font-family: "Songti SC", "Noto Serif SC", serif; line-height: 1.75; }
+  main { max-width: 860px; margin: 0 auto; background: #fffdf8; border: 1px solid #e5ddcb; border-radius: 16px; padding: 48px 56px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #c9a25e; color: #8a6a2f; }
+  h3 { font-size: 16px; margin: 18px 0 6px; }
+  h4 { font-size: 14px; margin: 16px 0 6px; color: #6b6255; }
+  p, li { font-size: 14px; }
+  .meta { color: #8a8272; font-size: 13px; margin-bottom: 8px; }
+  .muted { color: #8a8272; font-size: 13px; }
+  .pillars { display: flex; gap: 12px; margin-bottom: 10px; }
+  .pillar { border: 1px solid #e5ddcb; border-radius: 10px; padding: 10px 16px; text-align: center; background: #fbf7ee; }
+  .pillar strong { display: block; font-size: 20px; }
+  .pillar span { font-size: 12px; color: #8a8272; }
+  .pillar em { font-style: normal; font-size: 12px; color: #b08a3e; }
+  .mirror { border-left: 3px solid #c9a25e; background: #fbf7ee; padding: 14px 18px; margin: 12px 0; border-radius: 0 10px 10px 0; }
+  .keywords span { display: inline-block; background: #f0e2c4; color: #8a6a2f; border-radius: 999px; padding: 2px 12px; font-size: 12px; margin-right: 6px; }
+  .note { color: #b08a3e; font-size: 13px; }
+  .qa { margin: 12px 0; }
+  .q { font-weight: 600; margin-bottom: 2px; }
+  .a { color: #55503f; margin: 0; white-space: pre-wrap; }
+  .plan { border: 1px solid #e5ddcb; border-radius: 14px; padding: 20px 24px; margin: 16px 0; background: #fffdf8; }
+  .plan-kind { color: #b08a3e; font-size: 12px; letter-spacing: 2px; margin: 0; }
+  .thesis { color: #55503f; }
+  .dash { display: flex; gap: 12px; margin: 10px 0; }
+  .dash-item { border: 1px solid #e5ddcb; border-radius: 10px; padding: 6px 14px; text-align: center; }
+  .dash-item strong { display: block; font-size: 18px; }
+  .dash-item span { font-size: 12px; color: #8a8272; }
+  ul { padding-left: 20px; }
+  .path-card { border: 1px dashed #c9a25e; border-radius: 10px; padding: 12px 16px; margin: 8px 0; }
+  .card-title { font-weight: 600; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>人生罗盘 · 奥德赛计划报告</h1>
+  <p class="meta">生成时间 ${new Date().toLocaleString("zh-CN")}${direction ? ` · 探索方向：${escapeHtml(direction)}` : ""}</p>
+  ${baziSection}
+  ${diagnosisSection}
+  ${mirrorSection}
+  ${answersSection}
+  ${plansSection}
+</main>
+</body>
+</html>`;
+  }
+
+  function exportHtml() {
+    const blob = new Blob([buildExportHtml()], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "pathfinder-demo-session.json";
+    anchor.download = "pathfinder-奥德赛计划.html";
     anchor.click();
     URL.revokeObjectURL(url);
   }
 
   return (
     <main className="app-shell">
+      {loading ? <OdysseyLoading /> : null}
       <div className="workspace">
         <ProfileSidebar profile={profile} activeStep={activeStep} />
 
@@ -1163,15 +1735,9 @@ export default function Home() {
           <header className="main-header">
             <div>
               <h2>从八字命理，到红点探索，再到奥德赛计划</h2>
-              <p>
-                第一版 demo 采用“轻命理开场 + 十二问主线 + 三问一镜像”的节奏，让用户因为有趣开始，也因为自己的回答完成真正的方向判断。
-              </p>
             </div>
             <div className="header-actions">
-              <button className="icon-button" onClick={resetAll} title="重置">
-                <RefreshCcw size={18} />
-              </button>
-              <button className="icon-button" onClick={exportJson} title="导出 JSON" disabled={!profile}>
+              <button className="icon-button" onClick={exportHtml} title="导出 HTML 报告" disabled={!profile}>
                 <Download size={18} />
               </button>
             </div>
@@ -1204,7 +1770,9 @@ export default function Home() {
           {stage === "result" ? (
             <ResultPanel
               answers={answers}
-              setAnswers={setAnswers}
+              profile={profile}
+              reflections={reflections}
+              onUpdateNote={updateReflectionNote}
               direction={direction}
               setDirection={setDirection}
               sessionId={sessionId}
@@ -1212,7 +1780,6 @@ export default function Home() {
               setDiagnosisDraft={setDiagnosisDraft}
               setError={setError}
               onGeneratePlans={async (topDots) => {
-                setLoading(true);
                 setError("");
 
                 try {
@@ -1227,29 +1794,46 @@ export default function Home() {
                     })
                   });
 
-                  const response = await fetch("/api/odyssey/plans", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                      sessionId: sessionId || undefined,
-                      topDots,
-                      direction
-                    })
-                  });
-                  const data = (await response.json()) as PlansResponse & { message?: string };
-
-                  if (!response.ok) {
-                    throw new Error(data.message ?? "生成奥德赛计划失败");
-                  }
-
-                  setPlans(data.plans);
+                  setPlans([]);
                   setStage("plans");
+
+                  // 三版逐个请求：单版耗时短，可适配 serverless 单函数时限
+                  const kinds: OdysseyPlan["kind"][] = ["current", "alternate", "ideal"];
+                  const previous: Array<{ kind: string; title: string; thesis: string; timelineThemes: string[] }> = [];
+
+                  for (const kind of kinds) {
+                    const response = await fetch("/api/odyssey/plans", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json"
+                      },
+                      body: JSON.stringify({
+                        sessionId: sessionId || undefined,
+                        kind,
+                        topDots,
+                        direction,
+                        answers,
+                        profile: profile ?? undefined,
+                        previouslyGenerated: previous.length ? previous : undefined
+                      })
+                    });
+
+                    if (!response.ok) {
+                      const data = (await response.json().catch(() => null)) as { message?: string } | null;
+                      throw new Error(data?.message ?? "生成奥德赛计划失败");
+                    }
+
+                    const data = (await response.json()) as { plan: OdysseyPlan };
+                    setPlans((prev2) => [...prev2.filter((item) => item.kind !== data.plan.kind), data.plan]);
+                    previous.push({
+                      kind: data.plan.kind,
+                      title: data.plan.title,
+                      thesis: data.plan.thesis,
+                      timelineThemes: data.plan.timeline.map((item) => item.theme)
+                    });
+                  }
                 } catch (requestError) {
                   setError(requestError instanceof Error ? requestError.message : "生成奥德赛计划失败");
-                } finally {
-                  setLoading(false);
                 }
               }}
             />

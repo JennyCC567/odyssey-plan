@@ -1,5 +1,5 @@
 import type { BaziProfile } from "../bazi";
-import type { DiagnosisAnalysis, ExplorationAnswer, OdysseyPlan, RedDotScore } from "../odyssey";
+import type { ExplorationAnswer, OdysseyPlan, RedDotScore } from "../odyssey";
 import type { RedDotId } from "../theory";
 
 export type PathfinderSession = {
@@ -16,7 +16,7 @@ export type DiagnosisDraftRecord = {
   id: string;
   sessionId?: string;
   scores: RedDotScore[];
-  analysis: DiagnosisAnalysis;
+  topScores: RedDotScore[];
   source: string;
   createdAt: string;
 };

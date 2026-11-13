@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "人生罗盘 Pathfinder",
-  description: "从轻命理入口到人生红点十二问，再生成三版奥德赛计划的 AI 人生设计 demo。"
+  description: "从命理入口到人生红点十二问，再生成三版奥德赛计划的 AI 人生设计 demo。"
 };
 
 export default function RootLayout({

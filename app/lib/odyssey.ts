@@ -5,25 +5,13 @@ export type ExplorationAnswer = {
   text: string;
   tags: EvidenceTagId[];
   confirmedRedDots?: RedDotId[];
+  excludedRedDots?: RedDotId[];
 };
 
 export type RedDotScore = {
   id: RedDotId;
   score: number;
   evidence: string[];
-};
-
-export type FollowUpQuestion = {
-  id: string;
-  prompt: string;
-  candidates: RedDotId[];
-  evidenceTags: EvidenceTagId[];
-};
-
-export type DiagnosisAnalysis = {
-  status: "confident" | "needs_follow_up";
-  reasons: string[];
-  followUpQuestions: FollowUpQuestion[];
 };
 
 export type OdysseyPlan = {
@@ -46,6 +34,7 @@ export type OdysseyPlan = {
   firstYearCards: Array<{
     title: string;
     type: "能力" | "资源" | "进步";
+    category: string;
     actions: string[];
   }>;
 };
@@ -150,92 +139,8 @@ export function scoreRedDots(answers: ExplorationAnswer[]): RedDotScore[] {
     .sort((a, b) => b.score - a.score);
 }
 
-const MIN_TOP_SCORE = 12;
-const CLOSE_SCORE_MARGIN = 2;
-
 function unique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
-}
-
-function getEvidenceTagsForCandidates(candidates: RedDotId[]): EvidenceTagId[] {
-  const rankedTags = evidenceTags
-    .map((tag) => ({
-      id: tag.id,
-      weight: Math.max(...candidates.map((candidate) => tag.weights[candidate] ?? 0))
-    }))
-    .filter((tag) => tag.weight > 0)
-    .sort((a, b) => b.weight - a.weight)
-    .map((tag) => tag.id);
-
-  return rankedTags.length ? rankedTags.slice(0, 5) : evidenceTags.slice(0, 5).map((tag) => tag.id);
-}
-
-function createFollowUpQuestion(
-  kind: "low_evidence" | "top_conflict" | "third_boundary",
-  candidates: RedDotId[],
-  index: number
-): FollowUpQuestion {
-  const safeCandidates = unique(candidates).slice(0, 4);
-  const names = safeCandidates.map((candidate) => redDotById[candidate].name).join(" / ");
-  const promptByKind = {
-    low_evidence: "目前证据还比较散。请补充一个最近 1-3 年真实发生的选择：当时你最想保护什么，最后为它付出了什么代价？",
-    top_conflict: `现在最需要区分 ${names}。请举一个它们互相冲突时你真实做过的选择：你优先保护了哪一个，放弃了哪一个？`,
-    third_boundary: `Top 3 的边界还不稳定，尤其是 ${names}。请补一个能证明“它必须进入前三”或“它只是底线需求”的具体经历。`
-  };
-
-  return {
-    id: `${kind}-${safeCandidates.join("-")}-${index}`,
-    prompt: promptByKind[kind],
-    candidates: safeCandidates,
-    evidenceTags: getEvidenceTagsForCandidates(safeCandidates)
-  };
-}
-
-export function analyzeDiagnosis(scores: RedDotScore[]): DiagnosisAnalysis {
-  const ranked = scores.filter((score) => score.score > 0);
-  const fallbackCandidates = scores.slice(0, 3).map((score) => score.id);
-  const top1 = ranked[0];
-  const top2 = ranked[1];
-  const top3 = ranked[2];
-  const top4 = ranked[3];
-  const reasons: string[] = [];
-  const followUpQuestions: FollowUpQuestion[] = [];
-
-  function addFollowUp(kind: "low_evidence" | "top_conflict" | "third_boundary", candidates: RedDotId[]) {
-    const safeCandidates = unique(candidates.length ? candidates : fallbackCandidates).slice(0, 4);
-    if (!safeCandidates.length) return;
-
-    const key = `${kind}-${safeCandidates.join("-")}`;
-    if (followUpQuestions.some((question) => question.id.startsWith(key))) return;
-
-    followUpQuestions.push(createFollowUpQuestion(kind, safeCandidates, followUpQuestions.length + 1));
-  }
-
-  if (!top1 || top1.score < MIN_TOP_SCORE) {
-    reasons.push("核心线索强度还不够，不适合直接下 Top 3 结论。");
-    addFollowUp("low_evidence", ranked.slice(0, 3).map((score) => score.id));
-  }
-
-  if (!top3 || top3.score <= 0) {
-    reasons.push("还没有形成三个稳定红点候选，需要再补一条能拉开排序的证据。");
-    addFollowUp("low_evidence", ranked.slice(0, 3).map((score) => score.id));
-  }
-
-  if (top1 && top2 && top1.score - top2.score <= CLOSE_SCORE_MARGIN) {
-    reasons.push(`第一候选“${redDotById[top1.id].shortName}”和第二候选“${redDotById[top2.id].shortName}”分差很小。`);
-    addFollowUp("top_conflict", [top1.id, top2.id]);
-  }
-
-  if (top3 && top4 && top3.score - top4.score <= CLOSE_SCORE_MARGIN) {
-    reasons.push(`第三候选“${redDotById[top3.id].shortName}”和第四候选“${redDotById[top4.id].shortName}”边界不清。`);
-    addFollowUp("third_boundary", [top3.id, top4.id]);
-  }
-
-  return {
-    status: reasons.length ? "needs_follow_up" : "confident",
-    reasons: reasons.slice(0, 3),
-    followUpQuestions: followUpQuestions.slice(0, 2)
-  };
 }
 
 export function generateOdysseyPlans(topDots: RedDotId[], direction: string): OdysseyPlan[] {
@@ -269,16 +174,19 @@ export function generateOdysseyPlans(topDots: RedDotId[], direction: string): Od
       firstYearCards: [
         {
           type: "能力",
+          category: "技术能力",
           title: "核心能力卡",
           actions: ["列出目标方向的 3 个硬技能", "每周固定 2 次深度练习", "月底输出一次作品复盘"]
         },
         {
           type: "资源",
+          category: "人脉团队",
           title: "同行者卡",
           actions: ["找到 5 个可访谈对象", "加入 1 个高质量社群", "每月主动建立 2 次弱连接"]
         },
         {
           type: "进步",
+          category: "认知驱动",
           title: "反馈循环卡",
           actions: ["每周记录能量变化", "每月对照红点排序复盘", "每季度调整一次路径假设"]
         }
@@ -306,16 +214,19 @@ export function generateOdysseyPlans(topDots: RedDotId[], direction: string): Od
       firstYearCards: [
         {
           type: "能力",
+          category: "迁移能力",
           title: "迁移能力卡",
           actions: ["盘点当前能力可迁移部分", "补齐 1 个关键短板", "做一次公开演示"]
         },
         {
           type: "资源",
+          category: "商业资产",
           title: "安全网卡",
           actions: ["预估 6 个月现金流", "找到 2 位转型前辈", "建立备选机会清单"]
         },
         {
           type: "进步",
+          category: "实践驱动",
           title: "试错节奏卡",
           actions: ["每两周一次原型实验", "记录喜欢度和自信度", "连续 3 个月后再判断"]
         }
@@ -343,16 +254,19 @@ export function generateOdysseyPlans(topDots: RedDotId[], direction: string): Od
       firstYearCards: [
         {
           type: "能力",
+          category: "专项能力",
           title: "热爱具象卡",
           actions: ["写下理想版本的 10 个日常片段", "选择 1 个片段做成项目", "保留每周固定时间"]
         },
         {
           type: "资源",
+          category: "认知声誉",
           title: "同频连接卡",
           actions: ["关注 10 个相关样本", "访谈 2 个活成类似版本的人", "加入 1 个线下或线上场域"]
         },
         {
           type: "进步",
+          category: "体系驱动",
           title: "现实整合卡",
           actions: ["标记最小可并入现实生活的部分", "每月评估资源消耗", "季度决定保留或调整"]
         }
