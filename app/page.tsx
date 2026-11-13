@@ -1332,6 +1332,69 @@ const planKindMeta: Record<OdysseyPlan["kind"], { label: string; tag: string }> 
   ideal: { label: "计划三 · 不考虑金钱与形象", tag: "IDEAL" }
 };
 
+const PLAN_AXIS_LABELS = ["资源", "喜爱", "自信", "一致"];
+
+const PLAN_KIND_COLORS: Record<OdysseyPlan["kind"], string> = {
+  current: "#b08a3e",
+  alternate: "#4a7d78",
+  ideal: "#96607c"
+};
+
+type RadarSeries = { values: number[]; color: string };
+
+// 四维雷达图（资源/喜爱/自信/一致），纯 SVG 字符串，页面与 HTML 导出共用
+function radarChartSvg(series: RadarSeries[], options?: { size?: number; withLabels?: boolean }): string {
+  const size = options?.size ?? 128;
+  const withLabels = options?.withLabels ?? true;
+  const pad = withLabels ? 22 : 10;
+  const cx = size / 2;
+  const cy = size / 2;
+  const R = size / 2 - pad;
+  const angles = [-90, 0, 90, 180].map((deg) => (deg * Math.PI) / 180);
+  const pt = (angle: number, value: number) => {
+    const radius = R * Math.min(10, Math.max(0, value)) / 10;
+    return `${(cx + radius * Math.cos(angle)).toFixed(1)},${(cy + radius * Math.sin(angle)).toFixed(1)}`;
+  };
+  const rings = [2.5, 5, 7.5, 10]
+    .map((v) => `<polygon points="${angles.map((a) => pt(a, v)).join(" ")}" fill="none" stroke="rgba(36,33,29,0.12)" stroke-width="1" />`)
+    .join("");
+  const axes = angles
+    .map((a) => {
+      const [x, y] = pt(a, 10).split(",");
+      return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(36,33,29,0.10)" stroke-width="1" />`;
+    })
+    .join("");
+  const labels = withLabels
+    ? angles
+        .map((a, i) => {
+          const lx = cx + (R + 10) * Math.cos(a);
+          const ly = cy + (R + 10) * Math.sin(a);
+          const anchor = Math.abs(Math.cos(a)) < 0.01 ? "middle" : Math.cos(a) > 0 ? "start" : "end";
+          const dy = Math.sin(a) < -0.01 ? -3 : Math.sin(a) > 0.01 ? 9 : 4;
+          return `<text x="${lx.toFixed(1)}" y="${(ly + dy).toFixed(1)}" text-anchor="${anchor}" font-size="10" fill="#8a8272">${PLAN_AXIS_LABELS[i]}</text>`;
+        })
+        .join("")
+    : "";
+  const data = series
+    .map(
+      (s) =>
+        `<polygon points="${angles.map((a, i) => pt(a, s.values[i] ?? 0)).join(" ")}" fill="${s.color}" fill-opacity="0.14" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round" />`
+    )
+    .join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${rings}${axes}${data}${labels}</svg>`;
+}
+
+function planRadarSeries(plan: OdysseyPlan, color: string): RadarSeries {
+  return {
+    values: [plan.dashboard.resources, plan.dashboard.love, plan.dashboard.confidence, plan.dashboard.coherence],
+    color
+  };
+}
+
+function Radar({ svg }: { svg: string }) {
+  return <div className="radar" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
 function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
   return (
     <article className="plan-card is-skeleton" key={`skeleton-${kind}`}>
@@ -1400,8 +1463,34 @@ function PlanCardSkeleton({ kind }: { kind: OdysseyPlan["kind"] }) {
 }
 
 function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
+  const allReady = PLAN_KIND_ORDER.every((kind) => plans.some((item) => item.kind === kind));
+  const overlaySvg = allReady
+    ? radarChartSvg(
+        PLAN_KIND_ORDER.map((kind) => planRadarSeries(plans.find((item) => item.kind === kind)!, PLAN_KIND_COLORS[kind])),
+        { size: 156 }
+      )
+    : "";
+
   return (
     <div className="content">
+      {allReady ? (
+        <div className="plan-compare">
+          <Radar svg={overlaySvg} />
+          <div className="compare-legend">
+            <h4>三版四维对比</h4>
+            <p>同一组红点，三种约束条件。四个维度是 资源（现实支撑）、喜爱（热爱程度）、自信（把握感）、一致（与内核的契合）。面积越饱满，这一版当下的动能越均衡。</p>
+            <ul>
+              {PLAN_KIND_ORDER.map((kind) => (
+                <li key={kind}>
+                  <i style={{ background: PLAN_KIND_COLORS[kind] }} />
+                  {planKindMeta[kind].label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+
       <div className="plan-grid">
         {PLAN_KIND_ORDER.map((kind) => {
           const plan = plans.find((item) => item.kind === kind);
@@ -1418,57 +1507,42 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
                 <h3>{plan.title}</h3>
                 <p>{plan.thesis}</p>
               </div>
-              <div className="dashboard-mini">
-                <div className="dash-item">
-                  <strong>{plan.dashboard.resources}</strong>
-                  <span>资源</span>
-                </div>
-                <div className="dash-item">
-                  <strong>{plan.dashboard.love}</strong>
-                  <span>喜爱</span>
-                </div>
-                <div className="dash-item">
-                  <strong>{plan.dashboard.confidence}</strong>
-                  <span>自信</span>
-                </div>
-                <div className="dash-item">
-                  <strong>{plan.dashboard.coherence}</strong>
-                  <span>一致</span>
-                </div>
+              <div className="plan-head-radar">
+                <Radar svg={radarChartSvg([planRadarSeries(plan, PLAN_KIND_COLORS[kind])], { size: 132 })} />
               </div>
             </div>
 
             <div className="plan-body">
               <div>
                 <h4>五年时间线</h4>
-                <ul className="year-list">
+                <ol className="timeline-rail">
                   {plan.timeline.map((item) => (
-                    <li className="year-item" key={item.year}>
-                      <strong>{item.year}</strong>
-                      <div>
-                        <b>{item.theme}</b>
+                    <li key={item.year}>
+                      <span className="rail-node">{item.year.replace(/\D/g, "") || "•"}</span>
+                      <div className="rail-content">
+                        <b>{item.year} · {item.theme}</b>
                         <p>{item.focus}</p>
                       </div>
                     </li>
                   ))}
-                </ul>
+                </ol>
               </div>
               <div className="card-stack">
                 <div className="path-card">
                   <h4>风险排查</h4>
-                  <ul>
+                  <ol className="risk-list">
                     {plan.risks.map((risk) => (
                       <li key={risk}>{risk}</li>
                     ))}
-                  </ul>
+                  </ol>
                 </div>
                 <div className="path-card">
                   <h4>原型实验</h4>
-                  <ul>
+                  <ol className="proto-list">
                     {plan.prototypes.map((prototype) => (
                       <li key={prototype}>{prototype}</li>
                     ))}
-                  </ul>
+                  </ol>
                 </div>
               </div>
             </div>
@@ -1477,9 +1551,9 @@ function PlansPanel({ plans }: { plans: OdysseyPlan[] }) {
               <div style={{ gridColumn: "1 / -1" }}>
                 <h4>第一年路径卡</h4>
                 <div className="card-stack">
-                  {plan.firstYearCards.map((card) => (
-                    <div className="path-card" key={card.title}>
-                      <h4>{card.type}卡 · {card.category} · {card.title}</h4>
+                  {plan.firstYearCards.map((card, index) => (
+                    <div className={`path-card type-${index}`} key={card.title}>
+                      <h4><span className="card-type-tag">{card.type}</span>{card.category} · {card.title}</h4>
                       <ul>
                         {card.actions.map((action) => (
                           <li key={action}>{action}</li>
@@ -1633,6 +1707,22 @@ export default function Home() {
     const plansSection = plans.length
       ? section(
           "三版奥德赛计划",
+          (PLAN_KIND_ORDER.every((kind) => plans.some((item) => item.kind === kind))
+            ? `<div class="plan-compare">
+                <div class="radar">${radarChartSvg(
+                  PLAN_KIND_ORDER.map((kind) => {
+                    const plan = plans.find((item) => item.kind === kind)!;
+                    return planRadarSeries(plan, PLAN_KIND_COLORS[kind]);
+                  }),
+                  { size: 156 }
+                )}</div>
+                <div class="compare-legend">
+                  <h4>三版四维对比</h4>
+                  <p>同一组红点，三种约束条件。面积越饱满，这一版当下的动能越均衡。</p>
+                  <ul>${PLAN_KIND_ORDER.map((kind) => `<li><i style="background:${PLAN_KIND_COLORS[kind]}"></i>${planKindMeta[kind].label}</li>`).join("")}</ul>
+                </div>
+              </div>`
+            : "") +
           PLAN_KIND_ORDER.map((kind) => {
             const plan = plans.find((item) => item.kind === kind);
             if (!plan) return "";
@@ -1640,14 +1730,17 @@ export default function Home() {
               <p class="plan-kind">${planKindMeta[kind].label}</p>
               <h3>${escapeHtml(plan.title)}</h3>
               <p class="thesis">${escapeHtml(plan.thesis)}</p>
-              <div class="dash">${([
-                ["资源", plan.dashboard.resources],
-                ["喜爱", plan.dashboard.love],
-                ["自信", plan.dashboard.confidence],
-                ["一致", plan.dashboard.coherence]
-              ] as const)
-                .map(([label, value]) => `<div class="dash-item"><strong>${value}</strong><span>${label}</span></div>`)
-                .join("")}</div>
+              <div class="plan-visual">
+                <div class="radar">${radarChartSvg([planRadarSeries(plan, PLAN_KIND_COLORS[kind])], { size: 132 })}</div>
+                <div class="dash">${([
+                  ["资源", plan.dashboard.resources],
+                  ["喜爱", plan.dashboard.love],
+                  ["自信", plan.dashboard.confidence],
+                  ["一致", plan.dashboard.coherence]
+                ] as const)
+                  .map(([label, value]) => `<div class="dash-item"><strong>${value}</strong><span>${label}</span></div>`)
+                  .join("")}</div>
+              </div>
               <h4>五年时间线</h4>
               <ul>${plan.timeline.map((item) => `<li><strong>${escapeHtml(item.year)} ${escapeHtml(item.theme)}</strong> — ${escapeHtml(item.focus)}</li>`).join("")}</ul>
               <h4>风险排查</h4><ul>${plan.risks.map((risk) => `<li>${escapeHtml(risk)}</li>`).join("")}</ul>
@@ -1696,6 +1789,15 @@ export default function Home() {
   .dash-item { border: 1px solid #e5ddcb; border-radius: 10px; padding: 6px 14px; text-align: center; }
   .dash-item strong { display: block; font-size: 18px; }
   .dash-item span { font-size: 12px; color: #8a8272; }
+  .plan-visual { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .radar { flex: none; }
+  .radar svg { display: block; }
+  .plan-compare { display: flex; gap: 22px; align-items: center; border: 1px solid #e5ddcb; border-radius: 14px; background: #fbf7ee; padding: 16px 20px; margin-bottom: 16px; flex-wrap: wrap; }
+  .compare-legend h4 { margin: 0 0 6px; }
+  .compare-legend p { color: #8a8272; font-size: 13px; margin: 0 0 8px; }
+  .compare-legend ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+  .compare-legend li { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .compare-legend li i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   ul { padding-left: 20px; }
   .path-card { border: 1px dashed #c9a25e; border-radius: 10px; padding: 12px 16px; margin: 8px 0; }
   .card-title { font-weight: 600; margin: 0 0 4px; }
