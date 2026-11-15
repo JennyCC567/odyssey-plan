@@ -6,7 +6,8 @@ import {
   candidateShortlistOutputSchema,
   diagnosisReportOutputSchema,
   odysseyPlanOutputSchema,
-  rankingPromptsOutputSchema
+  rankingPromptsOutputSchema,
+  talentAnalysisOutputSchema
 } from "../llm/schemas";
 import {
   generateOdysseyPlans,
@@ -24,6 +25,68 @@ export type MirrorContext = {
   text: string;
   note?: string;
 };
+
+export type TalentAnalysis = {
+  talents: Array<{ god: string; text: string }>;
+  source: string;
+};
+
+// 侧栏「十神解析 · 你的天赋点」：模型基于完整命盘写个性化解读；失败返回 null，前端保留规则版
+export async function createTalentAnalysis(input: { profile: BaziProfile }): Promise<TalentAnalysis | null> {
+  const profile = input.profile;
+  const counts: Partial<Record<string, number>> = {};
+  if (profile.tenGods) {
+    for (const god of [profile.tenGods.year, profile.tenGods.month, profile.tenGods.hour]) {
+      counts[god] = (counts[god] ?? 0) + 1;
+    }
+  }
+  const hiddenCounts: Partial<Record<string, number>> = {};
+  if (profile.hiddenStems) {
+    for (const stems of Object.values(profile.hiddenStems)) {
+      for (const stem of stems) {
+        hiddenCounts[stem.tenGod] = (hiddenCounts[stem.tenGod] ?? 0) + 1;
+      }
+    }
+  }
+  const tenGodCounts = Object.entries(counts)
+    .map(([god, count]) => `${god}×${count}(天干)`)
+    .concat(Object.entries(hiddenCounts).map(([god, count]) => `${god}×${count}(藏干)`));
+
+  const llm = await runJsonCompletion({
+    task: "bazi-talent",
+    schema: talentAnalysisOutputSchema,
+    temperature: 0.5,
+    maxTokens: 4096,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "你是人生罗盘 Pathfinder 的命理镜面解读师，为侧栏「十神解析 · 你的天赋点」撰写个性化解读。",
+          "输入 baziProfile 是完整八字排盘（四柱干支、日主、五行分布、大运），tenGodCounts 是十神出现统计（天干为主证据，藏干为辅证据）。",
+          "任务：从证据最充分的 2-3 个十神入手，每个写一条 70-150 字的天赋点解读。每条结构：先用一句话点出该十神在这个盘里的真实结构（如「伤官透月干、日支又藏比肩」这类具体组合），再把结构翻译成可观察的行为倾向或天赋（用贴近年轻人在工作、创作、学习、协作中的具体场景举例），收尾给一句轻提醒或一条延伸观察线索。",
+          "要求：必须引用盘面真实结构，禁止套用通用模板；术语点到即止，重点是把十神翻译成用户能对号入座的日常描述；整体口吻温和、具体、有画面感。",
+          "边界：命理只作观察角度，不命定、不判灾祸、不做婚恋或绝对职业断言；每条结尾不要重复免责声明式的套话。",
+          "只输出 JSON：{\"talents\":[{\"god\":\"十神名\",\"text\":\"解读\"}]}，god 必须是真实十神名（比肩/劫财/食神/伤官/偏财/正财/七杀/正官/偏印/正印之一）。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          baziProfile: profile,
+          tenGodCounts,
+          currentLuck: profile.currentLuck
+        })
+      }
+    ]
+  });
+
+  if (!llm.ok) {
+    console.warn("bazi-talent LLM fallback:", llm.error);
+    return null;
+  }
+
+  return { talents: llm.data.talents, source: llm.source };
+}
 
 export type DiagnosisDraft = {
   scores: RedDotScore[];

@@ -433,7 +433,14 @@ const TEN_GOD_MEANING: Record<TenGod, string> = {
   正印: "系统吸收知识的天赋，也常是被人信任的稳压器"
 };
 
+type TalentItem = { god: string; text: string };
+
+// 同一命盘的天赋点解析缓存在内存里，十二问过程中切页不会重复请求
+const talentCache = new Map<string, TalentItem[]>();
+
 function BaziInsightPanel({ profile }: { profile: BaziProfile }) {
+  const [aiTalents, setAiTalents] = useState<TalentItem[] | null>(null);
+  const [talentLoading, setTalentLoading] = useState(false);
   const counts: Partial<Record<TenGod, number>> = {};
 
   if (profile.tenGods) {
@@ -452,16 +459,67 @@ function BaziInsightPanel({ profile }: { profile: BaziProfile }) {
     ? tenGodRelation(profile.dayMaster.stem, currentLuck.ganZhi[0] ?? "甲")
     : undefined;
 
+  const cacheKey = [
+    profile.pillars?.year,
+    profile.pillars?.month,
+    profile.pillars?.day,
+    profile.pillars?.hour
+  ].join("-");
+
+  // 异步拉取模型版天赋点：左侧答题不受影响，返回后替换规则版文案
+  useEffect(() => {
+    if (!cacheKey || cacheKey.includes("undefined")) return;
+    const cached = talentCache.get(cacheKey);
+    if (cached) {
+      setAiTalents(cached);
+      return;
+    }
+    let cancelled = false;
+    setTalentLoading(true);
+    fetch("/api/bazi/talent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile })
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { talents?: TalentItem[] | null } | null) => {
+        if (cancelled) return;
+        if (data?.talents?.length) {
+          talentCache.set(cacheKey, data.talents);
+          setAiTalents(data.talents);
+        }
+      })
+      .catch(() => {
+        // 静默失败：保留规则版文案
+      })
+      .finally(() => {
+        if (!cancelled) setTalentLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
+
   return (
     <div className="bazi-insight">
       <div className="bazi-insight-block">
         <h4>十神解析 · 你的天赋点</h4>
-        {ranked.length ? (
-          ranked.slice(0, 3).map(([god, count]) => (
-            <p key={god}>
-              <strong>{god}×{count}</strong>——{TEN_GOD_MEANING[god]}。
+        {aiTalents ? (
+          aiTalents.map((talent) => (
+            <p key={talent.god}>
+              <strong>{talent.god}</strong>——{talent.text}
             </p>
           ))
+        ) : ranked.length ? (
+          <>
+            {ranked.slice(0, 3).map(([god, count]) => (
+              <p key={god}>
+                <strong>{god}×{count}</strong>——{TEN_GOD_MEANING[god]}。
+              </p>
+            ))}
+            {talentLoading ? <p className="bazi-insight-hint">正在结合你的完整命盘推演天赋点…</p> : null}
+          </>
         ) : (
           <p>十神数据需要重新排盘后才会显示。</p>
         )}

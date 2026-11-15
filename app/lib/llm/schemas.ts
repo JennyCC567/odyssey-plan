@@ -108,6 +108,18 @@ export const diagnosisDraftRequestSchema = z.object({
   })).max(6).optional()
 });
 
+export const talentAnalysisRequestSchema = z.object({
+  profile: baziProfileSchema
+});
+
+// 侧栏「十神解析 · 你的天赋点」：每条聚焦一个十神，god 是十神名（如 伤官）
+export const talentAnalysisOutputSchema = z.object({
+  talents: z.array(z.object({
+    god: z.string().min(1).max(8),
+    text: z.string().min(20).max(280)
+  })).min(2).max(3)
+});
+
 export const diagnosisConfirmRequestSchema = z.object({
   sessionId: z.string().min(1).max(120).optional(),
   finalRedDots: z.array(redDotIdSchema).length(3),
